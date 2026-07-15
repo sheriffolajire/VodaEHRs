@@ -1,0 +1,19 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+alembic
+psycopg[binary]
+pydantic
+pydantic-settings
+pyjwt
+argon2-cffi
+cryptography
+boto3
+python-multipart
+
+# --- Dev ---
+ruff
+black
+isort
+pytest
+httpx

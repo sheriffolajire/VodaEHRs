@@ -1,0 +1,30 @@
+[project]
+name = "voda-ehrs-backend"
+version = "0.1.0"
+description = "Voda EHRs - Electronic Health Records backend"
+requires-python = ">=3.11"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+# S101: asserts are used in tests.
+# B008: FastAPI dependency injection relies on calls (Depends/Query) in defaults.
+ignore = ["S101", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# config.py holds placeholder settings defaults that are overridden by env vars.
+"app/core/config.py" = ["S105"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
