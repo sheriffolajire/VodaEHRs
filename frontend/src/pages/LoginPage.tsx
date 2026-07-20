@@ -1,6 +1,10 @@
+import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { ShieldCheck } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const loginSchema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -10,17 +14,24 @@ const loginSchema = z.object({
 type LoginForm = z.infer<typeof loginSchema>;
 
 export function LoginPage() {
+  const { login } = useAuth();
+  const navigate = useNavigate();
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   const {
     register,
     handleSubmit,
-    formState: { errors },
-  } = useForm<LoginForm>();
+    formState: { errors, isSubmitting },
+  } = useForm<LoginForm>({ resolver: zodResolver(loginSchema) });
 
-  // Wires to the auth API. This only scaffolds the form.
-  const onSubmit = (data: LoginForm) => {
-    const result = loginSchema.safeParse(data);
-    if (!result.success) return;
-    console.info("Login submitted (scaffold):", result.data.email);
+  const onSubmit = async (data: LoginForm) => {
+    setSubmitError(null);
+    try {
+      await login(data.email, data.password);
+      navigate("/dashboard", { replace: true });
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Login failed");
+    }
   };
 
   return (
@@ -53,11 +64,15 @@ export function LoginPage() {
               <p className="mt-1 text-xs text-red-500">{errors.password.message}</p>
             )}
           </div>
+          {submitError && (
+            <p className="rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-500">{submitError}</p>
+          )}
           <button
             type="submit"
-            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+            disabled={isSubmitting}
+            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
           >
-            Sign in
+            {isSubmitting ? "Signing in…" : "Sign in"}
           </button>
         </form>
       </div>

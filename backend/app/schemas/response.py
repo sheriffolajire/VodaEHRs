@@ -1,4 +1,4 @@
-"""API response envelope and shared schemas."""
+"""Standard API response envelope and shared schemas."""
 
 from typing import Any, Generic, TypeVar
 
@@ -8,7 +8,7 @@ T = TypeVar("T")
 
 
 class SuccessResponse(BaseModel, Generic[T]):
-    """ success envelope: {success, message, data}."""
+    """Standard success envelope: {success, message, data}."""
 
     success: bool = True
     message: str = ""
@@ -21,7 +21,7 @@ class ErrorDetail(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    """failure envelope: {success, message, errors}."""
+    """Standard failure envelope: {success, message, errors}."""
 
     success: bool = False
     message: str = ""
