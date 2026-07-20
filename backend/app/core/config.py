@@ -19,14 +19,24 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
 
     # Database
-    database_url: str = "postgresql+psycopg://voda:change_me_postgres@localhost:5432/voda_ehrs"
+    database_url: str = "postgresql+psycopg://voda:postgres@localhost:5432/voda_ehrs"
 
     # Security
     jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
-    aes_master_key: str = ""
+    aes_master_key: str = "base64_32_byte_key"
+
+    # Password reset token lifetime (minutes)
+    password_reset_expire_minutes: int = 30
+
+    # Initial admin seeded on first migration/seed run.
+    # Note: email-validator rejects reserved TLDs like .local, so use a real domain.
+    initial_admin_email: str = "admin@vodaehrs.com"
+    initial_admin_password: str = "password"
+    initial_admin_first_name: str = "Voda"
+    initial_admin_last_name: str = "Admin"
 
     # Object storage
     minio_endpoint: str = "localhost:9000"

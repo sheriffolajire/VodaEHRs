@@ -31,7 +31,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Middleware
+# --- Middleware ---
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -42,7 +42,7 @@ app.add_middleware(
 )
 
 
-# Standardized error envelopes
+# --- Standardized error envelopes ---
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content=failure(str(exc.detail)))
@@ -59,5 +59,5 @@ async def validation_exception_handler(
     return JSONResponse(status_code=422, content=failure("Validation failed.", errors))
 
 
-# Routes
+# --- Routes ---
 app.include_router(api_router, prefix=settings.api_v1_prefix)

@@ -4,12 +4,11 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 
+# Importing the models registers them on Base.metadata for autogenerate.
+import app.models  # noqa: F401,E402
 from alembic import context
 from app.core.config import settings
 from app.database.session import Base
-
-# Import models here as they are created so autogenerate can detect them.
-
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

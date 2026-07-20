@@ -1,2 +1,2 @@
 # Alembic migration versions live here. Generate with:
-# alembic revision --autogenerate -m "message"
+#   alembic revision --autogenerate -m "message"

@@ -1,14 +1,27 @@
-import { LayoutDashboard, Users, ShieldCheck, FileText } from "lucide-react";
+import { LayoutDashboard, Users, ShieldCheck } from "lucide-react";
 import { NavLink } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import type { RoleName } from "@/types/auth";
 
-const navItems = [
+interface NavItem {
+  to: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  roles?: RoleName[];
+}
+
+const navItems: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/dashboard", label: "Patients", icon: Users },
-  { to: "/dashboard", label: "Records", icon: FileText },
-  { to: "/dashboard", label: "Audit", icon: ShieldCheck },
+  { to: "/users", label: "Users", icon: Users, roles: ["Admin"] },
 ];
 
 export function Sidebar() {
+  const { user } = useAuth();
+
+  const visibleItems = navItems.filter(
+    (item) => !item.roles || (user && item.roles.includes(user.role.name)),
+  );
+
   return (
     <aside className="w-60 border-r bg-card p-4">
       <div className="mb-8 flex items-center gap-2 px-2">
@@ -16,11 +29,15 @@ export function Sidebar() {
         <span className="text-lg font-semibold">Voda EHRs</span>
       </div>
       <nav className="space-y-1">
-        {navItems.map(({ to, label, icon: Icon }) => (
+        {visibleItems.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={label}
             to={to}
-            className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+            className={({ isActive }) =>
+              `flex items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-muted hover:text-foreground ${
+                isActive ? "bg-muted text-foreground" : "text-muted-foreground"
+              }`
+            }
           >
             <Icon className="h-4 w-4" />
             {label}
