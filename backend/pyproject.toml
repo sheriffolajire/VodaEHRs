@@ -27,6 +27,8 @@ ignore = ["S101", "B008"]
 "app/core/config.py" = ["S105"]
 # "bearer" is the OAuth token_type label, not a secret.
 "app/schemas/auth.py" = ["S105"]
+# Test fixtures use hardcoded throwaway passwords.
+"tests/*" = ["S105", "S106"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

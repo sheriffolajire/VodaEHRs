@@ -18,6 +18,10 @@ def list_users(db: Session) -> list[User]:
     return user_repository.list_users(db)
 
 
+def list_clinicians(db: Session) -> list[User]:
+    return user_repository.list_clinicians(db)
+
+
 def list_roles(db: Session) -> list[Role]:
     return role_repository.list_roles(db)
 

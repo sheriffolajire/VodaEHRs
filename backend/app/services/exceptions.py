@@ -22,3 +22,7 @@ class ConflictError(Exception):
 
 class ValidationError(Exception):
     """Input failed a business rule (e.g. password policy)."""
+
+
+class CryptoError(Exception):
+    """Cryptographic operations failed (key issues, decryption errors, tampering detected)."""

@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.schemas.response import failure
+from app.storage.document_storage import ensure_bucket
 
 configure_logging()
 logger = get_logger("application")
@@ -20,6 +21,42 @@ logger = get_logger("application")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Application lifespan hook.
+
+    - Ensures the MinIO bucket exists.
+    - Runs the data seeding script on first start‑up if the database appears empty.
+      This makes the integration tests deterministic without requiring an external
+      seeding step.
+    """
+    # Ensure the object‑storage bucket exists before any upload can arrive.
+    try:
+        ensure_bucket()
+    except Exception as exc:  # noqa: BLE001 - startup should not crash on storage
+        logger.warning("Could not ensure MinIO bucket on startup: %s", exc)
+
+    # Run seeding if no users exist (idempotent). This covers test environments
+    # where the database is freshly created for each run.
+    from sqlalchemy.orm import Session
+    from app.database.session import SessionLocal
+    from app.repositories import user_repository
+    from app import seed as seed_module
+
+    db: Session = SessionLocal()
+    try:
+        existing_users = user_repository.list_users(db)
+        # Determine if any of the expected clinician emails are missing.
+        from app.seed import CLINICIAN_USERS
+        expected_emails = {c["email"] for c in CLINICIAN_USERS}
+        existing_emails = {u.email for u in existing_users}
+        missing = expected_emails - existing_emails
+        if missing:
+            logger.info("Missing clinician users (%s) – running data seeding.", ", ".join(missing))
+            seed_module.main()
+        else:
+            logger.debug("All expected clinicians present – skipping seeding.")
+    finally:
+        db.close()
+
     logger.info("Voda EHRs backend started in %s mode.", settings.environment)
     yield
 
@@ -27,7 +64,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.project_name,
     version="0.1.0",
-    description="Electronic Health Records platform.",
+    description="Zero-Trust Electronic Health Records platform (Phase 1 foundation).",
     lifespan=lifespan,
 )
 

@@ -9,6 +9,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  // Load environment variables from the repository root instead of the
+  // frontend directory. This ensures a single source of truth (.env at the
+  // project root) for both backend and frontend.
+  envDir: path.resolve(__dirname, ".."),
   server: {
     port: 5173,
     proxy: {

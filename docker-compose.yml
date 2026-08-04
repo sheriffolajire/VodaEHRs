@@ -1,4 +1,4 @@
-# PostgreSQL + MinIO only.
+# development infrastructure: PostgreSQL + MinIO only.
 # Frontend and backend run locally for fast reload and debugging.
 # Usage: docker compose up -d
 

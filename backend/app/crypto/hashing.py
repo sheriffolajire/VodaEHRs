@@ -1,4 +1,6 @@
-"""Password hashing using Argon2id. (scaffold) 
+"""Password hashing using Argon2id.
+
+This is a scaffold. Full authentication flows are implemented in Phase 2.
 """
 
 from argon2 import PasswordHasher

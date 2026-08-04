@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Users, UserRound, ShieldCheck } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import type { RoleName } from "@/types/auth";
@@ -12,6 +12,12 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  {
+    to: "/patients",
+    label: "Patients",
+    icon: UserRound,
+    roles: ["Admin", "Receptionist", "Doctor", "Nurse"],
+  },
   { to: "/users", label: "Users", icon: Users, roles: ["Admin"] },
 ];
 

@@ -11,8 +11,10 @@ argon2-cffi
 cryptography
 boto3
 python-multipart
+requests
 
-# --- Dev ---
+
+# --- Dev / tooling ---
 ruff
 black
 isort

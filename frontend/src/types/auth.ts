@@ -19,12 +19,13 @@ export interface AuthUser {
   created_at: string;
 }
 
-export interface TokenPair {
+/** Response shape for a successful login, containing only the access token. */
+export interface AccessTokenResponse {
   access_token: string;
-  refresh_token: string;
   token_type: string;
 }
 
-export interface LoginResponse extends TokenPair {
+/** Response shape for the login endpoint, returning the access token and user info. */
+export interface LoginResponse extends AccessTokenResponse {
   user: AuthUser;
 }
