@@ -1,8 +1,8 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import type { ErrorResponse } from "@/types/api";
 import type { SuccessResponse } from "@/types/api";
-import type { TokenPair } from "@/types/auth";
-import { clearTokens, getAccessToken, getRefreshToken, setTokens } from "@/services/tokenStorage";
+import type { AccessTokenResponse } from "@/types/auth";
+import { clearAccessToken, getAccessToken, setAccessToken } from "@/services/tokenStorage";
 
 const baseURL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
@@ -27,20 +27,16 @@ apiClient.interceptors.request.use((config) => {
 let refreshInFlight: Promise<string | null> | null = null;
 
 async function refreshAccessToken(): Promise<string | null> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) {
-    return null;
-  }
   try {
-    const { data } = await axios.post<SuccessResponse<TokenPair>>(
+    const { data } = await axios.post<SuccessResponse<AccessTokenResponse>>(
       `${baseURL}/auth/refresh`,
-      { refresh_token: refreshToken },
+      undefined,
       { headers: { "Content-Type": "application/json" } },
     );
-    setTokens(data.data.access_token, data.data.refresh_token);
+    setAccessToken(data.data.access_token);
     return data.data.access_token;
   } catch {
-    clearTokens();
+    clearAccessToken();
     return null;
   }
 }

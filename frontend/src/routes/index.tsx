@@ -4,6 +4,8 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { LoginPage } from "@/pages/LoginPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { UsersPage } from "@/pages/UsersPage";
+import { PatientsPage } from "@/pages/PatientsPage";
+import { PatientProfilePage } from "@/pages/PatientProfilePage";
 import { HealthPage } from "@/pages/HealthPage";
 
 export const router = createBrowserRouter([
@@ -17,6 +19,13 @@ export const router = createBrowserRouter([
         element: <DashboardLayout />,
         children: [
           { path: "/dashboard", element: <DashboardPage /> },
+          {
+            element: <ProtectedRoute allowedRoles={["Admin", "Receptionist", "Doctor", "Nurse"]} />,
+            children: [
+              { path: "/patients", element: <PatientsPage /> },
+              { path: "/patients/:patientId", element: <PatientProfilePage /> },
+            ],
+          },
           {
             element: <ProtectedRoute allowedRoles={["Admin"]} />,
             children: [{ path: "/users", element: <UsersPage /> }],

@@ -36,3 +36,6 @@ class User(Base):
     created_at: Mapped[datetime] = created_at_column()
 
     role: Mapped[Role] = relationship(lazy="joined")
+    key_pair: Mapped["UserKey"] = relationship(
+        "UserKey", back_populates="user", uselist=False
+    )
