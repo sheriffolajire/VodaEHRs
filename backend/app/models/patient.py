@@ -3,13 +3,18 @@
 import enum
 import uuid
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Date, ForeignKey, String
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.session import Base
 from app.models.mixins import created_at_column, uuid_pk
+
+if TYPE_CHECKING:
+    from app.models.consent import Consent
+    from app.models.emergency_access import EmergencyAccess
 
 
 class Gender(str, enum.Enum):
@@ -38,3 +43,19 @@ class Patient(Base):
     # The staff account (Receptionist/Admin) that registered the patient.
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = created_at_column()
+    
+    # Phase 5: Consent relationships
+    consents: Mapped[list["Consent"]] = relationship(
+        "Consent",
+        back_populates="patient",
+        lazy="select",
+        cascade="all, delete-orphan"
+    )
+    
+    # Phase 5: Emergency access relationships
+    emergency_accesses: Mapped[list["EmergencyAccess"]] = relationship(
+        "EmergencyAccess",
+        back_populates="patient",
+        lazy="select",
+        cascade="all, delete-orphan"
+    )

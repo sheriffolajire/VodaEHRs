@@ -36,11 +36,13 @@ Thumbs.db
 
 # --- Data volumes (if bind-mounted locally) ---
 data/
-
+.github/agents
 
 docs/
 Voda docs/
 
 .notes/samples/
 
+.clinerules/
 
+e2e/

@@ -10,6 +10,13 @@ export async function listPatients(query?: string): Promise<Patient[]> {
   return data.data;
 }
 
+export async function searchPatients(query: string): Promise<Patient[]> {
+  const { data } = await apiClient.get<SuccessResponse<Patient[]>>("/patients", {
+    params: { q: query },
+  });
+  return data.data;
+}
+
 export async function getPatient(patientId: string): Promise<Patient> {
   const { data } = await apiClient.get<SuccessResponse<Patient>>(`/patients/${patientId}`);
   return data.data;

@@ -27,12 +27,33 @@ _REGISTRARS = (RoleName.ADMIN, RoleName.RECEPTIONIST)
 def read_own_patient(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> dict:
-    """Return the patient record linked to the signed-in patient user (by email)."""
+    """Return the patient record linked to the signed-in patient user.
+    
+    First tries to match by email, then falls back to matching by name
+    for cases where patient email differs from user email.
+    """
     if current_user.role.name != RoleName.PATIENT:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only patients have a patient record.")
-    patient = (
-        patient_repository.get_by_email(db, current_user.email) if current_user.email else None
-    )
+    
+    # First try to find by exact email match
+    patient = None
+    if current_user.email:
+        patient = patient_repository.get_by_email(db, current_user.email)
+    
+    # If not found, try to find by name (for cases where emails differ)
+    if patient is None and current_user.first_name and current_user.last_name:
+        # Search by first name and filter by last name
+        from sqlalchemy import select, and_, func
+        from app.models.patient import Patient
+        
+        statement = select(Patient).where(
+            and_(
+                func.lower(Patient.first_name) == current_user.first_name.lower(),
+                func.lower(Patient.last_name) == current_user.last_name.lower()
+            )
+        )
+        patient = db.scalar(statement)
+    
     if patient is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No patient record is linked to you.")
     return success(data=PatientOut.model_validate(patient).model_dump(mode="json"))

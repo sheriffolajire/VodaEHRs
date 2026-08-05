@@ -26,3 +26,10 @@ def add(db: Session, record: MedicalRecord) -> MedicalRecord:
     db.add(record)
     db.flush()
     return record
+
+
+def update(db: Session, record: MedicalRecord) -> MedicalRecord:
+    """Update an existing record."""
+    db.flush()
+    db.refresh(record)
+    return record
