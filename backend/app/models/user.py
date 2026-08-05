@@ -3,6 +3,7 @@
 import enum
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import ForeignKey, String
@@ -11,6 +12,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database.session import Base
 from app.models.mixins import created_at_column, uuid_pk
 from app.models.role import Role
+
+if TYPE_CHECKING:
+    from app.models.consent import Consent
+    from app.models.emergency_access import EmergencyAccess
 
 
 class UserStatus(str, enum.Enum):
@@ -38,4 +43,21 @@ class User(Base):
     role: Mapped[Role] = relationship(lazy="joined")
     key_pair: Mapped["UserKey"] = relationship(
         "UserKey", back_populates="user", uselist=False
+    )
+    
+    # Phase 5: Consent relationships (consents granted to this clinician)
+    consents_granted: Mapped[list["Consent"]] = relationship(
+        "Consent",
+        back_populates="clinician",
+        lazy="select",
+        cascade="all, delete-orphan"
+    )
+    
+    # Phase 5: Emergency access requests made by this clinician
+    emergency_access_requests: Mapped[list["EmergencyAccess"]] = relationship(
+        "EmergencyAccess",
+        back_populates="clinician",
+        lazy="select",
+        cascade="all, delete-orphan",
+        foreign_keys="EmergencyAccess.clinician_id"
     )

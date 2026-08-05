@@ -71,3 +71,12 @@ class MedicalRecord(Base):
     signatures: Mapped[list["Signature"]] = relationship(
         "Signature", back_populates="record", lazy="select"
     )
+    
+    # Phase 5: Version history
+    versions: Mapped[list["RecordVersion"]] = relationship(
+        "RecordVersion",
+        back_populates="record",
+        lazy="select",
+        order_by="RecordVersion.version",
+        cascade="all, delete-orphan"
+    )

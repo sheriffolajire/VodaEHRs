@@ -5,10 +5,14 @@ from fastapi import APIRouter
 from app.api.v1 import (
     appointments,
     assignments,
+    audit,
     auth,
+    consent,
     documents,
+    emergency_access,
     health,
     patients,
+    record_versions,
     records,
     roles,
     users,
@@ -22,5 +26,9 @@ api_router.include_router(roles.router)
 api_router.include_router(patients.router)
 api_router.include_router(assignments.router)
 api_router.include_router(records.router)
+api_router.include_router(record_versions.router)
 api_router.include_router(documents.router)
 api_router.include_router(appointments.router)
+api_router.include_router(consent.router)
+api_router.include_router(emergency_access.router)
+api_router.include_router(audit.router)

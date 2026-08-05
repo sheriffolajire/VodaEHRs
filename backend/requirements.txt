@@ -11,8 +11,6 @@ argon2-cffi
 cryptography
 boto3
 python-multipart
-requests
-
 
 # --- Dev / tooling ---
 ruff

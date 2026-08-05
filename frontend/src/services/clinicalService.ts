@@ -11,18 +11,6 @@ import type { ApiRecord } from "@/types/apiRecord";
 
 const baseURL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
-/**
- * Decode base64 string to Uint8Array.
- */
-function base64ToUint8Array(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
-
 // NOTE: Decryption of records is performed server‑side. The frontend now receives
 // plaintext `content` directly from the API. The previous client‑side envelope
 // decryption implementation has been removed to eliminate exposure of the

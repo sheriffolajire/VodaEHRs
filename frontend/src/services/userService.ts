@@ -15,6 +15,11 @@ export async function listUsers(): Promise<AuthUser[]> {
   return data.data;
 }
 
+export async function listClinicians(): Promise<AuthUser[]> {
+  const { data } = await apiClient.get<SuccessResponse<AuthUser[]>>("/users/clinicians");
+  return data.data;
+}
+
 export async function listRoles(): Promise<Role[]> {
   const { data } = await apiClient.get<SuccessResponse<Role[]>>("/roles");
   return data.data;

@@ -17,6 +17,7 @@ from app.crypto.hashing import hash_password, verify_password
 from app.crypto.jwt import create_access_token, create_refresh_token, decode_token
 from app.crypto.password_policy import PasswordPolicyError, validate_password
 from app.crypto.tokens import hash_token
+from app.models.audit_log import AuditPriority
 from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_token import RefreshToken
 from app.models.user import User, UserStatus
@@ -25,6 +26,7 @@ from app.repositories import (
     refresh_token_repository,
     user_repository,
 )
+from app.services.audit_service import AuditService
 from app.services.exceptions import AuthError, ValidationError
 
 
@@ -55,6 +57,7 @@ def login(db: Session, email: str, password: str, ip_address: str | None) -> tup
     password_ok = verify_password(password, user.password_hash) if user else False
 
     if invalid or not password_ok:
+        # Log to file (legacy)
         record_event(
             AuditEvent(
                 action="auth.login",
@@ -64,13 +67,37 @@ def login(db: Session, email: str, password: str, ip_address: str | None) -> tup
                 ip_address=ip_address,
             )
         )
+        # Persist to database audit log (Phase 5)
+        if user:
+            AuditService.persist_audit_entry(
+                db=db,
+                action="auth.login.failure",
+                user_id=user.id,
+                patient_id=None,
+                status="failure",
+                reason="Invalid email or password",
+                ip_address=ip_address,
+                priority=AuditPriority.HIGH
+            )
         raise AuthError("Invalid email or password.")
 
     access_token, refresh_token = _issue_token_pair(db, user)
+    # Log to file (legacy)
     record_event(
         AuditEvent(
             action="auth.login", user_id=str(user.id), status="success", ip_address=ip_address
         )
+    )
+    # Persist to database audit log (Phase 5)
+    AuditService.persist_audit_entry(
+        db=db,
+        action="auth.login.success",
+        user_id=user.id,
+        patient_id=None,
+        status="success",
+        reason=f"User logged in from {ip_address}",
+        ip_address=ip_address,
+        priority=AuditPriority.NORMAL
     )
     return access_token, refresh_token, user
 
@@ -96,10 +123,22 @@ def refresh(db: Session, refresh_token: str, ip_address: str | None) -> tuple[st
     # One-time use: revoke the presented token before issuing its replacement.
     refresh_token_repository.revoke(db, stored)
     access_token, new_refresh = _issue_token_pair(db, user)
+    # Log to file (legacy)
     record_event(
         AuditEvent(
             action="auth.refresh", user_id=str(user.id), status="success", ip_address=ip_address
         )
+    )
+    # Persist to database audit log (Phase 5)
+    AuditService.persist_audit_entry(
+        db=db,
+        action="auth.refresh",
+        user_id=user.id,
+        patient_id=None,
+        status="success",
+        reason="Token refreshed",
+        ip_address=ip_address,
+        priority=AuditPriority.NORMAL
     )
     return access_token, new_refresh, user
 
@@ -109,6 +148,7 @@ def logout(db: Session, refresh_token: str, ip_address: str | None) -> None:
     stored = refresh_token_repository.get_active_by_hash(db, hash_token(refresh_token))
     if stored is not None:
         refresh_token_repository.revoke(db, stored)
+        # Log to file (legacy)
         record_event(
             AuditEvent(
                 action="auth.logout",
@@ -116,6 +156,17 @@ def logout(db: Session, refresh_token: str, ip_address: str | None) -> None:
                 status="success",
                 ip_address=ip_address,
             )
+        )
+        # Persist to database audit log (Phase 5)
+        AuditService.persist_audit_entry(
+            db=db,
+            action="auth.logout",
+            user_id=stored.user_id,
+            patient_id=None,
+            status="success",
+            reason="User logged out",
+            ip_address=ip_address,
+            priority=AuditPriority.NORMAL
         )
 
 
@@ -139,6 +190,7 @@ def request_password_reset(db: Session, email: str, ip_address: str | None) -> s
             + timedelta(minutes=settings.password_reset_expire_minutes),
         ),
     )
+    # Log to file (legacy)
     record_event(
         AuditEvent(
             action="auth.password_reset_request",
@@ -146,6 +198,17 @@ def request_password_reset(db: Session, email: str, ip_address: str | None) -> s
             status="success",
             ip_address=ip_address,
         )
+    )
+    # Persist to database audit log (Phase 5)
+    AuditService.persist_audit_entry(
+        db=db,
+        action="auth.password_reset_request",
+        user_id=user.id,
+        patient_id=None,
+        status="success",
+        reason="Password reset requested",
+        ip_address=ip_address,
+        priority=AuditPriority.HIGH
     )
     return raw_token
 
@@ -169,6 +232,7 @@ def confirm_password_reset(
 
     user.password_hash = hash_password(new_password)
     password_reset_repository.mark_used(db, stored)
+    # Log to file (legacy)
     record_event(
         AuditEvent(
             action="auth.password_reset_confirm",
@@ -176,4 +240,15 @@ def confirm_password_reset(
             status="success",
             ip_address=ip_address,
         )
+    )
+    # Persist to database audit log (Phase 5)
+    AuditService.persist_audit_entry(
+        db=db,
+        action="auth.password_reset_confirm",
+        user_id=user.id,
+        patient_id=None,
+        status="success",
+        reason="Password reset completed",
+        ip_address=ip_address,
+        priority=AuditPriority.HIGH
     )

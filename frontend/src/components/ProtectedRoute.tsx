@@ -1,3 +1,4 @@
+import React from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import type { RoleName } from "@/types/auth";
@@ -5,6 +6,10 @@ import type { RoleName } from "@/types/auth";
 interface ProtectedRouteProps {
   /** When provided, only these roles may access the nested routes. */
   allowedRoles?: RoleName[];
+  /** Alternative prop name for role checking. */
+  requiredRole?: RoleName;
+  /** Children to render if authorized. */
+  children?: React.ReactNode;
 }
 
 /**
@@ -12,7 +17,7 @@ interface ProtectedRouteProps {
  * users lacking the required role are sent to the dashboard. Server-side RBAC
  * remains the real enforcement; this only shapes the user experience.
  */
-export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
+export function ProtectedRoute({ allowedRoles, requiredRole, children }: ProtectedRouteProps) {
   const { user, isLoading, isAuthenticated } = useAuth();
 
   if (isLoading) {
@@ -23,9 +28,15 @@ export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
     return <Navigate to="/login" replace />;
   }
 
+  // Check allowedRoles
   if (allowedRoles && user && !allowedRoles.includes(user.role.name)) {
     return <Navigate to="/dashboard" replace />;
   }
 
-  return <Outlet />;
+  // Check requiredRole
+  if (requiredRole && user && user.role.name !== requiredRole) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return children ? <>{children}</> : <Outlet />;
 }

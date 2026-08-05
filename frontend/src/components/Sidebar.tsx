@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, UserRound, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Users, UserRound, ShieldCheck, Shield, History, FileText, AlertTriangle } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import type { RoleName } from "@/types/auth";
@@ -19,6 +19,33 @@ const navItems: NavItem[] = [
     roles: ["Admin", "Receptionist", "Doctor", "Nurse"],
   },
   { to: "/users", label: "Users", icon: Users, roles: ["Admin"] },
+  // Phase 5: Patient-only routes
+  {
+    to: "/my-records",
+    label: "My Records",
+    icon: FileText,
+    roles: ["Patient"],
+  },
+  {
+    to: "/consent",
+    label: "Consent",
+    icon: Shield,
+    roles: ["Patient"],
+  },
+  // Phase 5: Audit Logs (Admin only)
+  {
+    to: "/audit",
+    label: "Audit Logs",
+    icon: History,
+    roles: ["Admin"],
+  },
+  // Phase 5: Emergency Access Management (Admin only)
+  {
+    to: "/emergency-access",
+    label: "Emergency Access",
+    icon: AlertTriangle,
+    roles: ["Admin"],
+  },
 ];
 
 export function Sidebar() {

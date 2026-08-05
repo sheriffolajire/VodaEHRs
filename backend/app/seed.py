@@ -126,17 +126,6 @@ PATIENTS = [
         "phone": "+1-555-0105",
         "emergency_contact_name": "Lisa Anderson",
         "emergency_contact_phone": "+1-555-0106"
-    },
-    {
-        "hospital_number": "VOD-2026-004",
-        "first_name": "John",
-        "last_name": "Doe",
-        "dob": date(1988, 5, 15),
-        "gender": Gender.MALE,
-        "email": "john.doe@voda.com",
-        "phone": "+1-555-0107",
-        "emergency_contact_name": "Jane Doe",
-        "emergency_contact_phone": "+1-555-0108"
     }
 ]
 
@@ -279,10 +268,6 @@ def seed_users(db: Session, admin_user_id: uuid.UUID) -> List[User]:
         },
         "david.anderson@email.com": {
             "email": "david.anderson@voda.com",
-            "password": "patientpassword123"
-        },
-        "john.doe@voda.com": {
-            "email": "john.doe@voda.com",
             "password": "patientpassword123"
         }
     }

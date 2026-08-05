@@ -26,10 +26,13 @@ def read_current_user(current_user: User = Depends(get_current_user)) -> dict:
 
 @router.get(
     "/clinicians",
-    dependencies=[Depends(require_role(RoleName.ADMIN, RoleName.RECEPTIONIST, RoleName.DOCTOR))],
+    dependencies=[Depends(require_role(RoleName.ADMIN, RoleName.RECEPTIONIST, RoleName.DOCTOR, RoleName.PATIENT))],
 )
 def list_clinicians(db: Session = Depends(get_db)) -> dict:
-    """List active doctors and nurses for assignment and scheduling."""
+    """List active doctors and nurses for assignment and scheduling.
+    
+    Also accessible to patients for granting consent.
+    """
     clinicians = user_service.list_clinicians(db)
     return success(
         data=[UserOut.model_validate(user).model_dump(mode="json") for user in clinicians]

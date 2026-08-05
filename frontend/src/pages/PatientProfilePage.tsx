@@ -12,10 +12,9 @@ import {
   uploadDocument,
 } from "@/services/clinicalService";
 import { useAuth } from "@/contexts/AuthContext";
-import { RecordIntegrityDisplay } from "@/components/crypto/RecordIntegrityDisplay";
 import { CryptoDashboard } from "@/components/crypto/CryptoDashboard";
-import type { EncryptedRecord, RecordType } from "@/types/clinical";
-import type { ApiRecord } from "@/types/apiRecord";
+import { EmergencyAccessButton } from "@/components/emergency/EmergencyAccessButton";
+import type { RecordType } from "@/types/clinical";
 
 type Tab = "overview" | "records" | "documents" | "appointments";
 
@@ -34,6 +33,7 @@ export function PatientProfilePage() {
   const isClinician = user != null && CLINICAL_ROLES.includes(user.role.name);
   const isRegistrar = user != null && REGISTRAR_ROLES.includes(user.role.name);
   const isScheduler = user != null && SCHEDULER_ROLES.includes(user.role.name);
+  const isDoctor = user != null && user.role.name === "Doctor";
 
   const patientQuery = useQuery({
     queryKey: ["patient", patientId],
@@ -88,6 +88,30 @@ export function PatientProfilePage() {
           </div>
           
           <CryptoDashboard patientId={patientId} />
+          
+          {/* Emergency Access Button for Doctors */}
+          {isDoctor && patientQuery.data && (
+            <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-900 dark:bg-orange-950">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-medium text-orange-900 dark:text-orange-100">
+                    Emergency Access (Break-Glass)
+                  </h3>
+                  <p className="text-xs text-orange-700 dark:text-orange-300">
+                    Request emergency access to bypass consent requirements for this patient.
+                  </p>
+                </div>
+                <EmergencyAccessButton
+                  patientId={patientId}
+                  patientName={`${patientQuery.data.first_name} ${patientQuery.data.last_name}`}
+                  onSuccess={() => {
+                    // Refresh the page to show records after emergency access is granted
+                    window.location.reload();
+                  }}
+                />
+              </div>
+            </div>
+          )}
           
           {isRegistrar && <AssignSection patientId={patientId} />}
         </div>
@@ -246,15 +270,34 @@ function RecordsTab({
                   {new Date(record.created_at).toLocaleString()}
                 </span>
               </div>
-              <p className="mt-2 text-muted-foreground break-words whitespace-pre-wrap">
-                {record.content}
-              </p>
-              <div className="mt-3">
-                <RecordIntegrityDisplay 
-                  record={record} 
-                  decryptedContent={record.content ?? undefined}
-                />
+              <div className="mt-1 text-xs text-muted-foreground">
+                By: {record.created_by_name || `Dr. ${record.created_by.slice(0, 8)}...`}
               </div>
+              
+              {/* Show content if available, otherwise show access denied message */}
+              {record.access_denied ? (
+                <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                  <div className="flex items-center gap-2 text-yellow-800">
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    <span className="font-medium text-sm">Access Restricted</span>
+                  </div>
+                  <p className="text-xs text-yellow-700 mt-1">
+                    {record.access_denied_reason || "Patient consent required to view this record"}
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-2 text-muted-foreground break-words whitespace-pre-wrap">
+                  {record.content}
+                </p>
+              )}
+              
+              {record.hash && !record.access_denied && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  Hash: <code className="bg-muted px-1 rounded">{record.hash.slice(0, 16)}...</code>
+                </div>
+              )}
             </li>
           ))}
         </ul>
