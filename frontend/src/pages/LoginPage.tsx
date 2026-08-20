@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { z } from "zod";
 import { ShieldCheck } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { showToast } from "@/lib/toast";
 
 const loginSchema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -28,9 +29,12 @@ export function LoginPage() {
     setSubmitError(null);
     try {
       await login(data.email, data.password);
+      showToast.success("Login successful", "Welcome back!");
       navigate("/dashboard", { replace: true });
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Login failed");
+      const message = error instanceof Error ? error.message : "Login failed";
+      setSubmitError(message);
+      showToast.error("Login failed", message);
     }
   };
 
@@ -76,6 +80,14 @@ export function LoginPage() {
           >
             {isSubmitting ? "Signing in…" : "Sign in"}
           </button>
+          <div className="text-center">
+            <Link
+              to="/forgot-password"
+              className="text-sm text-muted-foreground hover:text-primary underline"
+            >
+              Forgot password?
+            </Link>
+          </div>
         </form>
       </div>
     </div>

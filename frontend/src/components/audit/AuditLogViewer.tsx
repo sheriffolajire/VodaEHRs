@@ -3,12 +3,12 @@
  * Admins can view and verify tamper-evident audit logs.
  */
 import { useState, useEffect } from "react";
-import { ShieldCheck, AlertTriangle, Search, Filter, RefreshCw, CheckCircle, XCircle, Hash } from "lucide-react";
-import { auditService, type AuditLog, type ChainStatus } from "@/services/auditService";
+import { ShieldCheck, AlertTriangle, Search, Filter, RefreshCw, CheckCircle, XCircle, Hash, Wrench, AlertCircle } from "lucide-react";
+import { auditService, type AuditLog, type ChainStatus, type AuditCategory, type AuditPriority } from "@/services/auditService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -22,9 +22,11 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { toast } from "sonner";
 
 const actionLabels: Record<string, string> = {
   "record.view": "Record Viewed",
@@ -44,18 +46,51 @@ const actionLabels: Record<string, string> = {
   "patient.view": "Patient Viewed",
   "patient.update": "Patient Updated",
   "patient.search": "Patient Search",
+  "audit.chain_repair": "Chain Repair",
+};
+
+const categoryLabels: Record<AuditCategory, string> = {
+  auth: "Authentication",
+  access: "Access",
+  modify: "Modification",
+  consent: "Consent",
+  emergency: "Emergency",
+  security: "Security",
+  system: "System",
+};
+
+const categoryColors: Record<AuditCategory, string> = {
+  auth: "bg-indigo-100 text-indigo-800",
+  access: "bg-blue-100 text-blue-800",
+  modify: "bg-yellow-100 text-yellow-800",
+  consent: "bg-purple-100 text-purple-800",
+  emergency: "bg-red-100 text-red-800",
+  security: "bg-red-600 text-white",
+  system: "bg-gray-100 text-gray-800",
+};
+
+const priorityLabels: Record<AuditPriority, string> = {
+  normal: "Normal (legacy)",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
 };
 
 export function AuditLogViewer() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [actions, setActions] = useState<string[]>([]);
+  const [categories, setCategories] = useState<{ value: AuditCategory; name: string }[]>([]);
+  const [priorities, setPriorities] = useState<{ value: AuditPriority; name: string }[]>([]);
   const [chainStatus, setChainStatus] = useState<ChainStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isRepairing, setIsRepairing] = useState(false);
+  const [showRepairDialog, setShowRepairDialog] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
   const [filterAction, setFilterAction] = useState<string>("");
   const [filterPriority, setFilterPriority] = useState<string>("");
+  const [filterCategory, setFilterCategory] = useState<string>("");
   const [verifyResult, setVerifyResult] = useState<{ is_valid: boolean; message: string; broken_at?: number | null } | null>(null);
 
   useEffect(() => {
@@ -72,13 +107,17 @@ export function AuditLogViewer() {
   const fetchData = async () => {
     try {
       setIsLoading(true);
-      const [logsData, actionsData, statusData] = await Promise.all([
+      const [logsData, actionsData, categoriesData, prioritiesData, statusData] = await Promise.all([
         auditService.listAuditLogs({ limit: 1000 }),
         auditService.listActions(),
+        auditService.listCategories(),
+        auditService.listPriorities(),
         auditService.getChainStatus(),
       ]);
       setLogs(logsData);
       setActions(actionsData);
+      setCategories(categoriesData);
+      setPriorities(prioritiesData);
       setChainStatus(statusData);
       setError(null);
     } catch (err) {
@@ -91,9 +130,10 @@ export function AuditLogViewer() {
   const handleFilter = async () => {
     try {
       setIsLoading(true);
-      const filters: { action?: string; priority?: string; limit: number } = { limit: 1000 };
+      const filters: { action?: string; priority?: string; category?: string; limit: number } = { limit: 1000 };
       if (filterAction) filters.action = filterAction;
       if (filterPriority) filters.priority = filterPriority;
+      if (filterCategory) filters.category = filterCategory;
       
       const data = await auditService.listAuditLogs(filters);
       setLogs(data);
@@ -101,6 +141,28 @@ export function AuditLogViewer() {
       setError(err instanceof Error ? err.message : "Failed to filter logs");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRepairChain = async () => {
+    try {
+      setIsRepairing(true);
+      const result = await auditService.repairChain();
+      
+      if (result.repaired) {
+        toast.success(`Chain repaired successfully. ${result.repaired_entries} entries updated.`);
+        // Refresh data
+        await fetchData();
+        await handleVerifyChain();
+      } else {
+        toast.info(result.reason || "No repair needed");
+      }
+      
+      setShowRepairDialog(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to repair chain");
+    } finally {
+      setIsRepairing(false);
     }
   };
 
@@ -142,11 +204,18 @@ export function AuditLogViewer() {
     return colors[action] || "bg-gray-100 text-gray-800";
   };
 
-  const getPriorityBadge = (priority: string) => {
-    if (priority === "HIGH") {
-      return <Badge className="bg-red-600">HIGH</Badge>;
-    }
-    return <Badge variant="secondary">NORMAL</Badge>;
+  const getPriorityBadge = (priority: AuditPriority) => {
+    const colors: Record<AuditPriority, string> = {
+      normal: "bg-gray-100 text-gray-800",
+      low: "bg-gray-100 text-gray-800",
+      medium: "bg-blue-100 text-blue-800",
+      high: "bg-red-600 text-white",
+    };
+    return <Badge className={colors[priority]}>{priorityLabels[priority]}</Badge>;
+  };
+
+  const getCategoryBadge = (category: AuditCategory) => {
+    return <Badge className={categoryColors[category]}>{categoryLabels[category]}</Badge>;
   };
 
   if (isLoading) {
@@ -213,7 +282,7 @@ export function AuditLogViewer() {
                 </div>
               </div>
               
-              <div className="p-4 border rounded-lg flex items-center justify-center">
+              <div className="p-4 border rounded-lg flex flex-col gap-2">
                 <Button
                   onClick={handleVerifyChain}
                   disabled={isVerifying}
@@ -226,6 +295,17 @@ export function AuditLogViewer() {
                   )}
                   Verify Chain
                 </Button>
+                {chainStatus && !chainStatus.chain_ok && (
+                  <Button
+                    variant="destructive"
+                    onClick={() => setShowRepairDialog(true)}
+                    disabled={isRepairing}
+                    className="w-full"
+                  >
+                    <Wrench className="h-4 w-4 mr-2" />
+                    Repair Chain
+                  </Button>
+                )}
               </div>
             </div>
           )}
@@ -243,6 +323,42 @@ export function AuditLogViewer() {
                   <span className="block mt-1 font-semibold">
                     Check log entry #{verifyResult.broken_at} (index {verifyResult.broken_at})
                   </span>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Chain Break Diagnostics */}
+          {chainStatus && !chainStatus.chain_ok && chainStatus.broken_entry && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Chain Break Detected</AlertTitle>
+              <AlertDescription className="mt-2 space-y-2">
+                <div>
+                  <strong>Broken Entry:</strong> {chainStatus.broken_entry.action} at{" "}
+                  {new Date(chainStatus.broken_entry.created_at).toLocaleString()}
+                </div>
+                {chainStatus.previous_entry && (
+                  <div>
+                    <strong>Previous Entry:</strong> {chainStatus.previous_entry.action} at{" "}
+                    {new Date(chainStatus.previous_entry.created_at).toLocaleString()}
+                  </div>
+                )}
+                {chainStatus.expected_prev_hash && chainStatus.actual_prev_hash && (
+                  <div className="space-y-1">
+                    <div className="text-xs">
+                      <strong>Expected Previous Hash:</strong>
+                      <code className="block p-1 bg-red-950 rounded text-xs font-mono break-all">
+                        {chainStatus.expected_prev_hash}
+                      </code>
+                    </div>
+                    <div className="text-xs">
+                      <strong>Actual Previous Hash:</strong>
+                      <code className="block p-1 bg-red-950 rounded text-xs font-mono break-all">
+                        {chainStatus.actual_prev_hash}
+                      </code>
+                    </div>
+                  </div>
                 )}
               </AlertDescription>
             </Alert>
@@ -276,15 +392,34 @@ export function AuditLogViewer() {
               </Select>
             </div>
             
-            <div className="flex-1 min-w-[200px]">
+            <div className="flex-1 min-w-[150px]">
+              <Select value={filterCategory} onValueChange={setFilterCategory}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All Categories</SelectItem>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.value} value={cat.value}>
+                      {categoryLabels[cat.value]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="flex-1 min-w-[150px]">
               <Select value={filterPriority} onValueChange={setFilterPriority}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filter by priority" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">All Priorities</SelectItem>
-                  <SelectItem value="NORMAL">Normal</SelectItem>
-                  <SelectItem value="HIGH">High</SelectItem>
+                  {priorities.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {priorityLabels[p.value as AuditPriority]}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -329,6 +464,7 @@ export function AuditLogViewer() {
                         <Badge className={getActionBadge(log.action)}>
                           {actionLabels[log.action] || log.action}
                         </Badge>
+                        {getCategoryBadge(log.category)}
                         {getPriorityBadge(log.priority)}
                         <span className="text-xs text-muted-foreground">
                           {new Date(log.timestamp).toLocaleString()}
@@ -397,6 +533,10 @@ export function AuditLogViewer() {
                     {actionLabels[selectedLog.action] || selectedLog.action}
                   </Badge>
                 </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">Category</div>
+                  {getCategoryBadge(selectedLog.category)}
+                </div>
               </div>
               
               <div>
@@ -458,6 +598,57 @@ export function AuditLogViewer() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Repair Chain Confirmation Dialog */}
+      <Dialog open={showRepairDialog} onOpenChange={setShowRepairDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Repair Audit Chain
+            </DialogTitle>
+            <DialogDescription>
+              This action will recalculate all hashes in the audit chain. This is a security-sensitive operation that will be logged.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Warning</AlertTitle>
+              <AlertDescription>
+                Chain repair should only be performed when the chain is legitimately broken due to system issues. 
+                Any tampering should be investigated before repair.
+              </AlertDescription>
+            </Alert>
+            
+            {chainStatus && chainStatus.broken_entry && (
+              <div className="text-sm space-y-2">
+                <p><strong>Broken at:</strong> {chainStatus.broken_entry.action}</p>
+                <p><strong>Time:</strong> {new Date(chainStatus.broken_entry.created_at).toLocaleString()}</p>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRepairDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleRepairChain}
+              disabled={isRepairing}
+            >
+              {isRepairing ? (
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Wrench className="h-4 w-4 mr-2" />
+              )}
+              Repair Chain
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

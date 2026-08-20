@@ -248,7 +248,12 @@ function KeyStatus({
 function calculateCryptoStats(records: any[], documents: any[]): CryptoStats {
   const totalRecords = records.length;
   const totalDocuments = documents.length;
-  const signedRecords = records.filter(r => r.signatures && r.signatures.length > 0).length;
+  // Count records with signatures - use signature_count when available (for restricted records)
+  // or signatures.length when content is accessible
+  const signedRecords = records.filter(r => {
+    const count = r.signature_count !== undefined ? r.signature_count : (r.signatures?.length || 0);
+    return count > 0;
+  }).length;
   
   // Calculate average record size (mock data since we don't have actual sizes)
   const avgRecordSize = totalRecords > 0 ? Math.round(2.5 * (1 + Math.random())) : 0;

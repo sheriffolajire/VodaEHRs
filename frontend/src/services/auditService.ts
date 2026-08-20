@@ -5,6 +5,13 @@
 import { apiClient } from "./apiClient";
 import type { SuccessResponse } from "@/types/api";
 
+/**
+ * `normal` is retained for audit records created before the LOW/MEDIUM split.
+ * It must remain displayable because audit priority is part of the stored hash.
+ */
+export type AuditPriority = "normal" | "low" | "medium" | "high";
+export type AuditCategory = "auth" | "access" | "modify" | "consent" | "emergency" | "security" | "system";
+
 export interface AuditLog {
   id: string;
   timestamp: string;
@@ -16,7 +23,8 @@ export interface AuditLog {
   status: string;
   reason: string | null;
   ip_address: string | null;
-  priority: string;
+  priority: AuditPriority;
+  category: AuditCategory;
   hash: string;
   prev_hash: string;
 }
@@ -27,6 +35,21 @@ export interface ChainStatus {
   total_entries: number;
   last_entry_time: string | null;
   last_entry_hash: string | null;
+  broken_entry?: {
+    id: string;
+    action: string;
+    created_at: string;
+    entry_hash: string;
+    prev_hash: string | null;
+  } | null;
+  previous_entry?: {
+    id: string;
+    action: string;
+    created_at: string;
+    entry_hash: string;
+  } | null;
+  expected_prev_hash?: string | null;
+  actual_prev_hash?: string | null;
 }
 
 export interface VerifyResult {
@@ -36,13 +59,32 @@ export interface VerifyResult {
   message: string;
 }
 
+export interface RepairResult {
+  repaired: boolean;
+  total_entries?: number;
+  repaired_entries?: number;
+  message?: string;
+  reason?: string;
+}
+
 export interface AuditFilters {
   patient_id?: string;
   clinician_id?: string;
   action?: string;
   priority?: string;
+  category?: string;
   limit?: number;
   offset?: number;
+}
+
+export interface CategoryInfo {
+  value: AuditCategory;
+  name: string;
+}
+
+export interface PriorityInfo {
+  value: AuditPriority;
+  name: string;
 }
 
 export const auditService = {
@@ -93,6 +135,24 @@ export const auditService = {
   /** List high priority audit logs. */
   async listHighPriority(limit: number = 100, offset: number = 0): Promise<AuditLog[]> {
     const { data } = await apiClient.get<SuccessResponse<AuditLog[]>>(`/audit/high-priority?limit=${limit}&offset=${offset}`);
+    return data.data;
+  },
+
+  /** Repair the audit hash chain. */
+  async repairChain(): Promise<RepairResult> {
+    const { data } = await apiClient.post<SuccessResponse<RepairResult>>("/audit/repair-chain");
+    return data.data;
+  },
+
+  /** List all available categories. */
+  async listCategories(): Promise<CategoryInfo[]> {
+    const { data } = await apiClient.get<SuccessResponse<CategoryInfo[]>>("/audit/categories");
+    return data.data;
+  },
+
+  /** List all available priorities. */
+  async listPriorities(): Promise<PriorityInfo[]> {
+    const { data } = await apiClient.get<SuccessResponse<PriorityInfo[]>>("/audit/priorities");
     return data.data;
   },
 };

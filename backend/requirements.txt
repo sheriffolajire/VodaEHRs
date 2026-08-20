@@ -11,10 +11,10 @@ argon2-cffi
 cryptography
 boto3
 python-multipart
+weasyprint
+redis
 
 # --- Dev / tooling ---
 ruff
 black
 isort
-pytest
-httpx

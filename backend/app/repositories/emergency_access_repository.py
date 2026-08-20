@@ -91,12 +91,14 @@ def revoke(
     revoked_by: uuid.UUID
 ) -> EmergencyAccess | None:
     """Revoke an emergency access early."""
+    from datetime import timezone
+    
     emergency = db.query(EmergencyAccess).filter(
         EmergencyAccess.id == emergency_id
     ).first()
     
     if emergency:
-        emergency.revoked_at = datetime.utcnow()
+        emergency.revoked_at = datetime.now(timezone.utc)
         emergency.revoked_by = revoked_by
         db.flush()
         db.refresh(emergency)

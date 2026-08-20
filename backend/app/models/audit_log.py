@@ -28,9 +28,28 @@ from app.models.mixins import uuid_pk
 
 
 class AuditPriority(str, enum.Enum):
-    """Priority level for audit entries."""
+    """Priority level for audit entries.
+
+    ``NORMAL`` is retained only to read audit entries created before the
+    LOW/MEDIUM split. Its value is part of the immutable audit hash, so old
+    entries must not be reinterpreted as a different priority.
+    """
+
     NORMAL = "normal"
-    HIGH = "high"  # Used for break-glass and tamper detection
+    LOW = "low"  # Routine operations, views
+    MEDIUM = "medium"  # Data modifications, access grants
+    HIGH = "high"  # Break-glass, tamper detection, security events
+
+
+class AuditCategory(str, enum.Enum):
+    """Category for audit entries."""
+    AUTH = "auth"           # Authentication events
+    ACCESS = "access"       # Data access (view, read)
+    MODIFY = "modify"       # Data modifications (create, update, delete)
+    CONSENT = "consent"     # Consent management
+    EMERGENCY = "emergency" # Emergency access
+    SECURITY = "security"   # Security events (tamper, violations)
+    SYSTEM = "system"       # System events (backup, maintenance)
 
 
 class AuditLog(Base):
@@ -98,10 +117,18 @@ class AuditLog(Base):
         nullable=True
     )
     
-    # Priority (high for break-glass, tamper detection)
+    # Priority (low, medium, high)
     priority: Mapped[AuditPriority] = mapped_column(
         SQLEnum(AuditPriority),
-        default=AuditPriority.NORMAL,
+        default=AuditPriority.LOW,
+        nullable=False,
+        index=True
+    )
+    
+    # Category for grouping events
+    category: Mapped[AuditCategory] = mapped_column(
+        SQLEnum(AuditCategory),
+        default=AuditCategory.ACCESS,
         nullable=False,
         index=True
     )

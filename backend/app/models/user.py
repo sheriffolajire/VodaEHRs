@@ -39,6 +39,10 @@ class User(Base):
         SQLEnum(UserStatus, name="user_status"), default=UserStatus.ACTIVE
     )
     created_at: Mapped[datetime] = created_at_column()
+    
+    # Account lockout fields (H5: Account lockout mechanism)
+    failed_login_attempts: Mapped[int] = mapped_column(default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(nullable=True)
 
     role: Mapped[Role] = relationship(lazy="joined")
     key_pair: Mapped["UserKey"] = relationship(

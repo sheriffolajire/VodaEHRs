@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import * as authService from "@/services/authService";
-import { getAccessToken } from "@/services/tokenStorage";
+import { AUTH_SESSION_EXPIRED_EVENT } from "@/services/apiClient";
 import type { AuthUser } from "@/types/auth";
 
 interface AuthContextValue {
@@ -24,17 +24,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Rehydrate the session on load: if a token exists, resolve the current user.
+  // Rehydrate the session on load: try to fetch current user.
+  // The access token is now in HttpOnly cookie, so we just try to fetch.
   useEffect(() => {
-    if (!getAccessToken()) {
+    const handleSessionExpired = () => {
+      setUser(null);
       setIsLoading(false);
-      return;
-    }
+    };
+
+    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired);
+
     authService
       .fetchCurrentUser()
       .then(setUser)
       .catch(() => setUser(null))
       .finally(() => setIsLoading(false));
+
+    return () => {
+      window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired);
+    };
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {

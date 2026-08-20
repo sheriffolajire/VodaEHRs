@@ -40,3 +40,31 @@ def add(db: Session, assignment: PatientAssignment) -> PatientAssignment:
     db.add(assignment)
     db.flush()
     return assignment
+
+
+def list_for_patient(db: Session, patient_id: uuid.UUID, active_only: bool = True) -> list[PatientAssignment]:
+    """Return all assignments for a patient."""
+    query = select(PatientAssignment).where(
+        PatientAssignment.patient_id == patient_id
+    )
+    if active_only:
+        query = query.where(PatientAssignment.revoked_at.is_(None))
+    return list(db.scalars(query).all())
+
+
+def list_for_clinician(db: Session, clinician_id: uuid.UUID, active_only: bool = True) -> list[PatientAssignment]:
+    """Return all assignments for a clinician."""
+    query = select(PatientAssignment).where(
+        PatientAssignment.clinician_id == clinician_id
+    )
+    if active_only:
+        query = query.where(PatientAssignment.revoked_at.is_(None))
+    return list(db.scalars(query).all())
+
+
+def list_all(db: Session, active_only: bool = True) -> list[PatientAssignment]:
+    """Return all assignments."""
+    query = select(PatientAssignment)
+    if active_only:
+        query = query.where(PatientAssignment.revoked_at.is_(None))
+    return list(db.scalars(query).all())

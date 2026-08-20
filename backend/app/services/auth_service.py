@@ -50,8 +50,26 @@ def login(db: Session, email: str, password: str, ip_address: str | None) -> tup
 
     A single generic error is used for every failure mode so the endpoint does
     not reveal whether an email exists or an account is disabled.
+    
+    Implements account lockout after 5 failed attempts (H5).
     """
     user = user_repository.get_by_email(db, email)
+    
+    # Check if account is locked (H5: Account lockout)
+    if user and user.locked_until and user.locked_until > datetime.now(UTC):
+        remaining = int((user.locked_until - datetime.now(UTC)).total_seconds() / 60)
+        AuditService.persist_audit_entry(
+            db=db,
+            action="auth.login.failure",
+            user_id=user.id,
+            patient_id=None,
+            status="failure",
+            reason=f"Account locked. Try again in {remaining} minutes.",
+            ip_address=ip_address,
+            priority=AuditPriority.HIGH
+        )
+        raise AuthError(f"Account locked. Try again in {remaining} minutes.")
+    
     invalid = user is None or user.status != UserStatus.ACTIVE
     # Always run verification against a real or dummy hash to keep timing uniform.
     password_ok = verify_password(password, user.password_hash) if user else False
@@ -69,17 +87,39 @@ def login(db: Session, email: str, password: str, ip_address: str | None) -> tup
         )
         # Persist to database audit log (Phase 5)
         if user:
-            AuditService.persist_audit_entry(
-                db=db,
-                action="auth.login.failure",
-                user_id=user.id,
-                patient_id=None,
-                status="failure",
-                reason="Invalid email or password",
-                ip_address=ip_address,
-                priority=AuditPriority.HIGH
-            )
+            # Increment failed login attempts (H5)
+            user.failed_login_attempts += 1
+            
+            # Lock account after 5 failed attempts (H5)
+            if user.failed_login_attempts >= 5:
+                user.locked_until = datetime.now(UTC) + timedelta(minutes=30)
+                AuditService.persist_audit_entry(
+                    db=db,
+                    action="auth.login.failure",
+                    user_id=user.id,
+                    patient_id=None,
+                    status="failure",
+                    reason="Account locked due to too many failed login attempts",
+                    ip_address=ip_address,
+                    priority=AuditPriority.HIGH
+                )
+            else:
+                AuditService.persist_audit_entry(
+                    db=db,
+                    action="auth.login.failure",
+                    user_id=user.id,
+                    patient_id=None,
+                    status="failure",
+                    reason=f"Invalid email or password. Attempt {user.failed_login_attempts}/5",
+                    ip_address=ip_address,
+                    priority=AuditPriority.MEDIUM
+                )
         raise AuthError("Invalid email or password.")
+
+    # Reset failed login attempts on successful login (H5)
+    if user.failed_login_attempts > 0:
+        user.failed_login_attempts = 0
+        user.locked_until = None
 
     access_token, refresh_token = _issue_token_pair(db, user)
     # Log to file (legacy)
@@ -97,7 +137,7 @@ def login(db: Session, email: str, password: str, ip_address: str | None) -> tup
         status="success",
         reason=f"User logged in from {ip_address}",
         ip_address=ip_address,
-        priority=AuditPriority.NORMAL
+        priority=AuditPriority.MEDIUM
     )
     return access_token, refresh_token, user
 
@@ -138,7 +178,7 @@ def refresh(db: Session, refresh_token: str, ip_address: str | None) -> tuple[st
         status="success",
         reason="Token refreshed",
         ip_address=ip_address,
-        priority=AuditPriority.NORMAL
+        priority=AuditPriority.MEDIUM
     )
     return access_token, new_refresh, user
 
@@ -166,7 +206,7 @@ def logout(db: Session, refresh_token: str, ip_address: str | None) -> None:
             status="success",
             reason="User logged out",
             ip_address=ip_address,
-            priority=AuditPriority.NORMAL
+            priority=AuditPriority.MEDIUM
         )
 
 

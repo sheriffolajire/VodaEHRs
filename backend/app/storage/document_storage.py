@@ -51,3 +51,22 @@ def open_object_stream(storage_key: str):
     client = get_storage_client()
     response = client.get_object(Bucket=settings.minio_bucket, Key=storage_key)
     return response["Body"]
+
+
+def get_bucket_size() -> int:
+    """Get the total size of all objects in the documents bucket in bytes.
+    
+    Returns:
+        Total size in bytes, or 0 if bucket doesn't exist or error occurs.
+    """
+    client = get_storage_client()
+    total_size = 0
+    try:
+        paginator = client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=settings.minio_bucket):
+            for obj in page.get("Contents", []):
+                total_size += obj.get("Size", 0)
+    except ClientError:
+        # Bucket doesn't exist or other error
+        pass
+    return total_size

@@ -7,6 +7,7 @@ in one place stops it drifting as clinical endpoints grow.
 Phase 5 adds the 4th layer: Consent (ensure_consent).
 """
 
+import enum
 import uuid
 
 from sqlalchemy.orm import Session
@@ -17,6 +18,26 @@ from app.models.role import RoleName
 from app.models.user import User
 from app.repositories import assignment_repository, consent_repository, emergency_access_repository, patient_repository
 from app.services.exceptions import NotFoundError, PermissionError_
+
+
+class ResourceType(str, enum.Enum):
+    """Resource types for consent and authorization checks.
+    
+    Extends RecordType to include documents and appointments.
+    """
+    # Record types
+    DIAGNOSIS = "diagnosis"
+    MEDICATION = "medication"
+    NURSING_NOTE = "nursing_note"
+    LAB_RESULT = "lab_result"
+    IMAGING = "imaging"
+    OTHER = "other"
+    
+    # Document types
+    DOCUMENT = "document"
+    
+    # Appointment type
+    APPOINTMENT = "appointment"
 
 
 def ensure_patient_access(db: Session, user: User, patient_id: uuid.UUID) -> Patient:
@@ -60,7 +81,7 @@ def ensure_consent(
     db: Session,
     clinician: User,
     patient_id: uuid.UUID,
-    record_type: RecordType,
+    record_type: RecordType | ResourceType,
     is_admin_override: bool = False
 ) -> bool:
     """Check if clinician has consent OR active break-glass for this record type.
@@ -81,7 +102,7 @@ def ensure_consent(
         db: Database session
         clinician: The clinician requesting access
         patient_id: The patient whose records are being accessed
-        record_type: Type of record being accessed
+        record_type: Type of record being accessed (RecordType or ResourceType)
         is_admin_override: If True, admin is bypassing consent (still audited)
     
     Returns:
@@ -90,6 +111,9 @@ def ensure_consent(
     Raises:
         PermissionError_: If no consent, no break-glass, and no admin override
     """
+    # Convert RecordType to string value for comparison
+    record_type_str = record_type.value if hasattr(record_type, 'value') else str(record_type)
+    
     # Patients always have access to their own records
     if clinician.role.name == RoleName.PATIENT:
         # Check if accessing own record
@@ -102,12 +126,26 @@ def ensure_consent(
     if is_admin_override and clinician.role.name == RoleName.ADMIN:
         return True  # Caller must audit this as "admin_override"
     
-    # Check active consent
-    has_consent = consent_repository.has_active_consent(
-        db, patient_id, clinician.id, record_type
-    )
+    # Check active consent using the string value
+    from app.models.consent import Consent
+    from datetime import datetime
+    from sqlalchemy import or_
     
-    if has_consent:
+    now = datetime.utcnow()
+    
+    active_consent = db.query(Consent).filter(
+        Consent.patient_id == patient_id,
+        Consent.clinician_id == clinician.id,
+        Consent.record_type == record_type_str,
+        Consent.granted == True,
+        Consent.revoked_at.is_(None),
+        or_(
+            Consent.expires_at.is_(None),
+            Consent.expires_at > now
+        )
+    ).first()
+    
+    if active_consent:
         return True
     
     # Check active break-glass (emergency access)
@@ -120,7 +158,7 @@ def ensure_consent(
     
     # No consent, no break-glass
     raise PermissionError_(
-        f"No consent granted for {record_type.value} records. "
+        f"No consent granted for {record_type_str} records. "
         "Request patient consent or use break-glass in emergency."
     )
 

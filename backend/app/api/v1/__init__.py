@@ -14,7 +14,9 @@ from app.api.v1 import (
     patients,
     record_versions,
     records,
+    reports,
     roles,
+    stats,
     users,
 )
 
@@ -32,3 +34,5 @@ api_router.include_router(appointments.router)
 api_router.include_router(consent.router)
 api_router.include_router(emergency_access.router)
 api_router.include_router(audit.router)
+api_router.include_router(stats.router)
+api_router.include_router(reports.router)

@@ -1,5 +1,4 @@
 import { apiClient } from "@/services/apiClient";
-import { getAccessToken } from "@/services/tokenStorage";
 import type { SuccessResponse } from "@/types/api";
 import type {
   Appointment,
@@ -8,8 +7,6 @@ import type {
   RecordType,
 } from "@/types/clinical";
 import type { ApiRecord } from "@/types/apiRecord";
-
-const baseURL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
 // NOTE: Decryption of records is performed server‑side. The frontend now receives
 // plaintext `content` directly from the API. The previous client‑side envelope
@@ -21,6 +18,17 @@ const baseURL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 export async function listRecords(patientId: string): Promise<ApiRecord[]> {
   const { data } = await apiClient.get<SuccessResponse<ApiRecord[]>>("/records", {
     params: { patient_id: patientId },
+  });
+  return data.data;
+}
+
+/**
+ * Admin override to view a record without normal consent.
+ * Requires a reason (min 20 characters) which is logged for audit.
+ */
+export async function adminOverrideViewRecord(recordId: string, reason: string): Promise<ApiRecord> {
+  const { data } = await apiClient.post<SuccessResponse<ApiRecord>>(`/records/${recordId}/admin-override`, null, {
+    params: { reason },
   });
   return data.data;
 }
@@ -61,22 +69,16 @@ export async function uploadDocument(
 }
 
 /**
- * Download a document as a blob. Uses fetch so the Authorization header is sent
- * and the binary body is handled without axios JSON parsing.
+ * Download a document as a blob. apiClient sends the HttpOnly session cookie
+ * and retains the standard refresh/session-expiry handling.
  */
 export async function downloadDocument(documentId: string, filename: string): Promise<void> {
   try {
-    const response = await fetch(`${baseURL}/documents/${documentId}`, {
-      headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },
+    const response = await apiClient.get(`/documents/${documentId}`, {
+      responseType: "blob",
     });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Download failed with status ${response.status}:`, errorText);
-      throw new Error(`Download failed: ${response.status} ${response.statusText}`);
-    }
-    
-    const blob = await response.blob();
+
+    const blob = response.data as Blob;
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -85,6 +87,32 @@ export async function downloadDocument(documentId: string, filename: string): Pr
     URL.revokeObjectURL(url);
   } catch (error) {
     console.error("Error downloading document:", error);
+    throw new Error(`Failed to download document: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+/**
+ * Admin override download - allows admins to download documents they didn't create.
+ * Requires a reason (min 20 characters) which is logged for audit.
+ */
+export async function adminOverrideDownload(documentId: string, filename: string, reason: string): Promise<void> {
+  try {
+    const formData = new FormData();
+    formData.append("reason", reason);
+    const response = await apiClient.post(`/documents/${documentId}/admin-override`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+      responseType: "blob",
+    });
+
+    const blob = response.data as Blob;
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error("Error downloading document with admin override:", error);
     throw new Error(`Failed to download document: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }

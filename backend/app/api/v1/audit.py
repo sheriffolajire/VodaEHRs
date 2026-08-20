@@ -27,7 +27,11 @@ def list_audit_logs(
     patient_id: uuid.UUID | None = Query(None, description="Filter by patient"),
     clinician_id: uuid.UUID | None = Query(None, description="Filter by clinician"),
     action: str | None = Query(None, description="Filter by action type"),
-    priority: str | None = Query(None, description="Filter by priority (NORMAL, HIGH)"),
+    priority: str | None = Query(
+        None,
+        description="Filter by priority (normal [legacy], low, medium, high)",
+    ),
+    category: str | None = Query(None, description="Filter by category (auth, access, modify, consent, emergency, security, system)"),
     limit: int = Query(100, ge=1, le=1000, description="Number of results to return"),
     offset: int = Query(0, ge=0, description="Number of results to skip"),
     current_user: User = Depends(require_role(RoleName.ADMIN)),
@@ -38,6 +42,8 @@ def list_audit_logs(
     Only admins can view audit logs.
     """
     try:
+        from app.models.audit_log import AuditCategory
+        
         # Map priority string to enum
         priority_enum = None
         if priority:
@@ -46,12 +52,21 @@ def list_audit_logs(
             except KeyError:
                 pass
         
+        # Map category string to enum
+        category_enum = None
+        if category:
+            try:
+                category_enum = AuditCategory(category.lower())
+            except (KeyError, ValueError):
+                pass
+        
         logs = audit_service.AuditService.get_audit_logs(
             db,
             user_id=clinician_id,
             patient_id=patient_id,
             action=action,
             priority=priority_enum,
+            category=category_enum,
             skip=offset,
             limit=limit
         )
@@ -80,6 +95,7 @@ def list_audit_logs(
                 "reason": log.reason,
                 "ip_address": log.ip_address,
                 "priority": log.priority.value,
+                "category": log.category.value,
                 "hash": log.entry_hash,
                 "prev_hash": log.prev_hash
             })
@@ -236,9 +252,74 @@ def list_high_priority(
                 "patient_id": str(log.patient_id) if log.patient_id else None,
                 "status": log.status,
                 "reason": log.reason,
-                "priority": log.priority.value
+                "priority": log.priority.value,
+                "category": log.category.value
             })
         
         return success(data=result)
     except PermissionError_ as exc:
         raise to_http_error(exc) from exc
+
+
+@router.post("/repair-chain")
+def repair_chain(
+    current_user: User = Depends(require_role(RoleName.ADMIN)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Repair the audit hash chain.
+    
+    This endpoint recalculates all hashes from the beginning of the chain,
+    fixing any breaks that may have occurred. This should only be used
+    by admins when the chain is detected as broken.
+    
+    A repair action is itself logged as a high-priority security event.
+    """
+    try:
+        # First check if chain is actually broken
+        status = audit_service.AuditService.get_chain_status(db)
+        
+        if status.get("chain_ok"):
+            return success(
+                data={
+                    "repaired": False,
+                    "reason": "Chain is already valid, no repair needed"
+                }
+            )
+        
+        # Perform the repair
+        result = audit_service.AuditService.repair_chain(db, str(current_user.id))
+        
+        # Commit the repair
+        db.commit()
+        
+        return success(data=result)
+    except PermissionError_ as exc:
+        raise to_http_error(exc) from exc
+
+
+@router.get("/categories")
+def list_categories(
+    current_user: User = Depends(require_role(RoleName.ADMIN)),
+) -> dict:
+    """List all available audit event categories."""
+    from app.models.audit_log import AuditCategory
+    
+    categories = [
+        {"value": cat.value, "name": cat.name}
+        for cat in AuditCategory
+    ]
+    return success(data=categories)
+
+
+@router.get("/priorities")
+def list_priorities(
+    current_user: User = Depends(require_role(RoleName.ADMIN)),
+) -> dict:
+    """List all available audit event priorities."""
+    from app.models.audit_log import AuditPriority
+    
+    priorities = [
+        {"value": p.value, "name": p.name}
+        for p in AuditPriority
+    ]
+    return success(data=priorities)

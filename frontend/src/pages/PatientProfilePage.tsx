@@ -3,6 +3,8 @@ import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assignClinician, getPatient, listClinicians } from "@/services/patientService";
 import {
+  adminOverrideDownload,
+  adminOverrideViewRecord,
   createAppointment,
   createRecord,
   downloadDocument,
@@ -120,7 +122,7 @@ export function PatientProfilePage() {
       {tab === "records" && (
         <RecordsTab patientId={patientId} canCreate={isClinician} role={user?.role.name} />
       )}
-      {tab === "documents" && <DocumentsTab patientId={patientId} canUpload={isClinician} />}
+      {tab === "documents" && <DocumentsTab patientId={patientId} canUpload={isClinician} currentUserId={user?.id} currentUserRole={user?.role.name} />}
       {tab === "appointments" && (
         <AppointmentsTab patientId={patientId} canSchedule={isScheduler} />
       )}
@@ -203,8 +205,13 @@ function RecordsTab({
     role === "Nurse" ? "nursing_note" : "diagnosis",
   );
   const [error, setError] = useState<string | null>(null);
+  const [overrideRecord, setOverrideRecord] = useState<{id: string, record_type: string} | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+  const [overriddenRecords, setOverriddenRecords] = useState<Set<string>>(new Set());
 
   const recordsQuery = useDecryptedRecords(patientId);
+  const isAdmin = role === "Admin";
 
   const createMutation = useMutation({
     mutationFn: () => createRecord(patientId, recordType, content),
@@ -275,7 +282,7 @@ function RecordsTab({
               </div>
               
               {/* Show content if available, otherwise show access denied message */}
-              {record.access_denied ? (
+              {record.access_denied && !overriddenRecords.has(record.id) ? (
                 <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
                   <div className="flex items-center gap-2 text-yellow-800">
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -286,6 +293,19 @@ function RecordsTab({
                   <p className="text-xs text-yellow-700 mt-1">
                     {record.access_denied_reason || "Patient consent required to view this record"}
                   </p>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOverrideRecord({id: record.id, record_type: record.record_type});
+                        setOverrideReason("");
+                        setOverrideError(null);
+                      }}
+                      className="mt-2 rounded-md border border-amber-500 bg-amber-50 px-2 py-1 text-xs text-amber-700 hover:bg-amber-100 dark:bg-amber-900 dark:text-amber-100"
+                    >
+                      Admin Override
+                    </button>
+                  )}
                 </div>
               ) : (
                 <p className="mt-2 text-muted-foreground break-words whitespace-pre-wrap">
@@ -298,22 +318,151 @@ function RecordsTab({
                   Hash: <code className="bg-muted px-1 rounded">{record.hash.slice(0, 16)}...</code>
                 </div>
               )}
+              
+              {/* Signature information */}
+              {!record.access_denied && record.signatures && record.signatures.length > 0 && (
+                <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-md">
+                  <div className="flex items-center gap-2 text-green-800">
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="font-medium text-xs">
+                      {record.signatures.length} Signature{record.signatures.length > 1 ? 's' : ''} Verified
+                    </span>
+                  </div>
+                  <div className="text-xs text-green-700 mt-1">
+                    Signed by: {record.signatures.map(s => s.signer_id.slice(0, 8)).join(', ')}...
+                  </div>
+                  {record.integrity_ok === false && (
+                    <div className="text-xs text-red-600 mt-1 font-semibold">
+                      ⚠️ Integrity check failed - record may have been tampered with
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {!record.access_denied && (!record.signatures || record.signatures.length === 0) && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  <span className="text-yellow-600">⚠ Not signed</span>
+                </div>
+              )}
+              
+              {/* Show signature count even when access is denied */}
+              {record.access_denied && (record.signature_count || 0) > 0 && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  <span className="text-green-600">
+                    ✓ {record.signature_count} Signature{record.signature_count !== 1 ? 's' : ''} (verified)
+                  </span>
+                </div>
+              )}
             </li>
           ))}
         </ul>
       </div>
+      
+      {/* Admin Override Dialog for Records */}
+      {overrideRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg border bg-card p-6 shadow-lg">
+            <h3 className="mb-4 text-lg font-semibold text-amber-600">Admin Override - View Record</h3>
+            <p className="mb-4 text-sm text-muted-foreground">
+              You are about to view a <strong>{overrideRecord.record_type.replace("_", " ")}</strong> record using admin override.
+              This action will be logged for audit purposes.
+            </p>
+            <div className="mb-4">
+              <label className="mb-2 block text-sm font-medium">
+                Reason for override (required, min 20 characters):
+              </label>
+              <textarea
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+                className="w-full rounded-md border p-2 text-sm"
+                rows={3}
+                placeholder="e.g., Legal compliance audit - required by court order"
+              />
+            </div>
+            {overrideError && (
+              <p className="mb-4 text-xs text-red-500">{overrideError}</p>
+            )}
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setOverrideRecord(null)}
+                className="rounded-md border px-4 py-2 text-sm hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={overrideReason.length < 20}
+                onClick={() => {
+                  setOverrideError(null);
+                  adminOverrideViewRecord(overrideRecord.id, overrideReason)
+                    .then((recordData) => {
+                      // Add to overridden records set to show content
+                      setOverriddenRecords(prev => new Set(prev).add(overrideRecord.id));
+                      // Update the record in the cache
+                      queryClient.setQueryData(["records", patientId], (oldData: any) => {
+                        if (!oldData) return oldData;
+                        return oldData.map((r: any) => 
+                          r.id === overrideRecord.id 
+                            ? { ...r, ...recordData, access_denied: false }
+                            : r
+                        );
+                      });
+                      setOverrideRecord(null);
+                    })
+                    .catch((err) => {
+                      setOverrideError(err instanceof Error ? err.message : "Failed to view record");
+                    });
+                }}
+                className="rounded-md bg-amber-600 px-4 py-2 text-sm text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                View with Override
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function DocumentsTab({ patientId, canUpload }: { patientId: string; canUpload: boolean }) {
+function DocumentsTab({ 
+  patientId, 
+  canUpload, 
+  currentUserId,
+  currentUserRole 
+}: { 
+  patientId: string; 
+  canUpload: boolean;
+  currentUserId?: string;
+  currentUserRole?: string;
+}) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [overrideDoc, setOverrideDoc] = useState<{id: string, filename: string} | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [overrideError, setOverrideError] = useState<string | null>(null);
 
   const documentsQuery = useQuery({
     queryKey: ["documents", patientId],
     queryFn: () => listDocuments(patientId),
   });
+  
+  // Check if user can download a specific document
+  const canDownload = (docUploadedBy: string): boolean => {
+    // Document creator (uploader) can download
+    // Patient can download their own documents
+    // Admin with override can download
+    const isUploader = currentUserId === docUploadedBy;
+    const isPatient = currentUserRole === "Patient";
+    return isUploader || isPatient;
+  };
+  
+  // Check if user is admin (can use override)
+  const isAdmin = currentUserRole === "Admin";
 
   const uploadMutation = useMutation({
     mutationFn: (file: File) => uploadDocument(patientId, file),
@@ -378,17 +527,98 @@ function DocumentsTab({ patientId, canUpload }: { patientId: string; canUpload: 
                   </span>
                 )}
               </span>
-              <button
-                type="button"
-                onClick={() => downloadDocument(doc.id, doc.filename)}
-                className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
-              >
-                Download
-              </button>
+              {canDownload(doc.uploaded_by) ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDownloadError(null);
+                    downloadDocument(doc.id, doc.filename).catch((err) => {
+                      setDownloadError(err instanceof Error ? err.message : "Download failed");
+                    });
+                  }}
+                  className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                >
+                  Download
+                </button>
+              ) : isAdmin ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOverrideDoc({id: doc.id, filename: doc.filename});
+                    setOverrideReason("");
+                    setOverrideError(null);
+                  }}
+                  className="rounded-md border border-amber-500 bg-amber-50 px-2 py-1 text-xs text-amber-700 hover:bg-amber-100 dark:bg-amber-900 dark:text-amber-100"
+                  title="Admin override - requires reason"
+                >
+                  Override
+                </button>
+              ) : (
+                <span className="text-xs text-muted-foreground italic" title="Only the document creator can download">
+                  View only
+                </span>
+              )}
             </li>
           ))}
         </ul>
+        {downloadError && (
+          <p className="mt-3 text-xs text-red-500">{downloadError}</p>
+        )}
       </div>
+      
+      {/* Admin Override Dialog */}
+      {overrideDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg border bg-card p-6 shadow-lg">
+            <h3 className="mb-4 text-lg font-semibold text-amber-600">Admin Override Download</h3>
+            <p className="mb-4 text-sm text-muted-foreground">
+              You are about to download <strong>{overrideDoc.filename}</strong> using admin override.
+              This action will be logged for audit purposes.
+            </p>
+            <div className="mb-4">
+              <label className="mb-2 block text-sm font-medium">
+                Reason for override (required, min 20 characters):
+              </label>
+              <textarea
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+                className="w-full rounded-md border p-2 text-sm"
+                rows={3}
+                placeholder="e.g., Legal compliance audit - required by court order"
+              />
+            </div>
+            {overrideError && (
+              <p className="mb-4 text-xs text-red-500">{overrideError}</p>
+            )}
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setOverrideDoc(null)}
+                className="rounded-md border px-4 py-2 text-sm hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={overrideReason.length < 20}
+                onClick={() => {
+                  setOverrideError(null);
+                  adminOverrideDownload(overrideDoc.id, overrideDoc.filename, overrideReason)
+                    .then(() => {
+                      setOverrideDoc(null);
+                    })
+                    .catch((err) => {
+                      setOverrideError(err instanceof Error ? err.message : "Download failed");
+                    });
+                }}
+                className="rounded-md bg-amber-600 px-4 py-2 text-sm text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Download with Override
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

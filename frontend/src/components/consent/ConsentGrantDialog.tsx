@@ -40,6 +40,8 @@ const recordTypes = [
   { value: "lab_result", label: "Lab Results" },
   { value: "imaging", label: "Imaging" },
   { value: "other", label: "Other" },
+  { value: "document", label: "Documents" },
+  { value: "appointment", label: "Appointments" },
 ];
 
 export function ConsentGrantDialog({

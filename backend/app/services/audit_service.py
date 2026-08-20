@@ -24,7 +24,7 @@ class AuditService:
         status: str,
         reason: str | None = None,
         ip_address: str | None = None,
-        priority: AuditPriority = AuditPriority.NORMAL
+        priority: AuditPriority = AuditPriority.MEDIUM
     ) -> AuditLog:
         """Persist an audit entry with hash chaining.
         
@@ -98,6 +98,7 @@ class AuditService:
         patient_id: uuid.UUID | None = None,
         action: str | None = None,
         priority: AuditPriority | None = None,
+        category: Any = None,
         skip: int = 0,
         limit: int = 100
     ) -> list[AuditLog]:
@@ -109,13 +110,20 @@ class AuditService:
             patient_id: Filter by patient
             action: Filter by action
             priority: Filter by priority
+            category: Filter by category (AuditCategory)
             skip: Pagination offset
             limit: Pagination limit
         
         Returns:
             List of audit log entries
         """
-        if user_id:
+        from app.models.audit_log import AuditCategory
+        
+        if category:
+            return audit_log_repository.get_events_by_category(
+                db, category.value, skip=skip, limit=limit
+            )
+        elif user_id:
             return audit_log_repository.list_by_user(db, user_id, skip, limit)
         elif patient_id:
             return audit_log_repository.list_by_patient(db, patient_id, skip, limit)
@@ -150,7 +158,7 @@ class AuditService:
         Returns:
             The created audit log entry
         """
-        priority = AuditPriority.HIGH if (is_break_glass or is_admin_override) else AuditPriority.NORMAL
+        priority = AuditPriority.HIGH if (is_break_glass or is_admin_override) else AuditPriority.MEDIUM
         
         reason = None
         if is_break_glass:
@@ -172,6 +180,7 @@ class AuditService:
     @staticmethod
     def log_consent_grant(
         db: Session,
+        user_id: uuid.UUID,
         patient_id: uuid.UUID,
         clinician_id: uuid.UUID,
         record_type: str,
@@ -181,7 +190,8 @@ class AuditService:
         
         Args:
             db: Database session
-            patient_id: Patient granting consent
+            user_id: User granting consent (references users.id)
+            patient_id: Patient record affected (references patients.id)
             clinician_id: Clinician receiving consent
             record_type: Type of records covered
             ip_address: Optional IP address
@@ -192,17 +202,18 @@ class AuditService:
         return AuditService.persist_audit_entry(
             db=db,
             action="consent.grant",
-            user_id=patient_id,
+            user_id=user_id,
             patient_id=patient_id,
             status="success",
             reason=f"Granted consent to {clinician_id} for {record_type}",
             ip_address=ip_address,
-            priority=AuditPriority.NORMAL
+            priority=AuditPriority.MEDIUM
         )
     
     @staticmethod
     def log_consent_revoke(
         db: Session,
+        user_id: uuid.UUID,
         patient_id: uuid.UUID,
         clinician_id: uuid.UUID,
         record_type: str,
@@ -212,12 +223,12 @@ class AuditService:
         return AuditService.persist_audit_entry(
             db=db,
             action="consent.revoke",
-            user_id=patient_id,
+            user_id=user_id,
             patient_id=patient_id,
             status="success",
             reason=f"Revoked consent from {clinician_id} for {record_type}",
             ip_address=ip_address,
-            priority=AuditPriority.NORMAL
+            priority=AuditPriority.MEDIUM
         )
     
     @staticmethod
@@ -260,3 +271,36 @@ class AuditService:
             ip_address=ip_address,
             priority=AuditPriority.HIGH
         )
+    
+    @staticmethod
+    def repair_chain(db: Session, admin_user_id: str) -> dict:
+        """Repair the audit hash chain by recalculating hashes.
+        
+        This should only be called by an admin when the chain is broken.
+        It recalculates all hashes from the beginning, creating a new valid chain.
+        
+        Args:
+            db: Database session
+            admin_user_id: ID of admin performing the repair (for logging)
+            
+        Returns:
+            Dict with repair results
+        """
+        from app.models.audit_log import AuditCategory
+        
+        # Perform the repair via repository
+        result = audit_log_repository.repair_chain(db, admin_user_id)
+        
+        if result.get("repaired"):
+            # Log the repair action itself
+            AuditService.persist_audit_entry(
+                db=db,
+                action="audit.chain_repair",
+                user_id=uuid.UUID(admin_user_id),
+                patient_id=None,
+                status="success",
+                reason=f"Admin repaired audit chain. {result.get('repaired_entries', 0)} entries updated.",
+                priority=AuditPriority.HIGH
+            )
+        
+        return result
