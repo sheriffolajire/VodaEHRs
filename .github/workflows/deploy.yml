@@ -1,0 +1,77 @@
+name: Build & Deploy to Amazon ECS (Production)
+
+on:
+  push:
+    branches: [ main ]          # production branch
+  workflow_dispatch:           # allow manual runs
+
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+
+    steps:
+    
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+    
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+    
+      - name: Configure AWS credentials (static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+     
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+     
+      - name: Build & push Backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ECR_REPO }}:backend-${{ github.sha }}
+            ${{ secrets.ECR_REPO }}:backend-latest
+
+     
+      - name: Build & push Frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ECR_REPO }}:frontend-${{ github.sha }}
+            ${{ secrets.ECR_REPO }}:frontend-latest
+
+      
+      - name: Build & push Nginx image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./infrastructure/docker/nginx
+          file: ./infrastructure/docker/nginx/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ECR_REPO }}:nginx-${{ github.sha }}
+            ${{ secrets.ECR_REPO }}:nginx-latest
+
+      
+
+     
+      - name: Docker system prune
+        if: always()
+        run: docker system prune -af
