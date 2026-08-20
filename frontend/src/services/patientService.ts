@@ -2,6 +2,8 @@ import { apiClient } from "@/services/apiClient";
 import type { SuccessResponse } from "@/types/api";
 import type { AuthUser } from "@/types/auth";
 import type { Patient, PatientCreateInput } from "@/types/clinical";
+// Re‑export Patient type for consumers that import it from this service
+export type { Patient };
 
 export async function listPatients(query?: string): Promise<Patient[]> {
   const { data } = await apiClient.get<SuccessResponse<Patient[]>>("/patients", {

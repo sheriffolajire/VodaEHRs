@@ -11,7 +11,6 @@ import {
   deleteUser,
   listAssignments,
   listAssignmentsForClinician,
-  listAssignmentsForPatient,
   createAssignment,
   revokeAssignment,
   type Assignment 
@@ -28,17 +27,13 @@ import {
   PowerOff,
   UserCheck,
   Stethoscope,
-  ChevronDown,
-  ChevronUp,
   X,
   Filter,
-  Briefcase,
-  Calendar,
   Mail,
   Shield,
-  MoreHorizontal,
   AlertTriangle,
-  Info
+  Info,
+  Briefcase
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,9 +41,9 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+// DropdownMenu components are not used in this page and have been removed.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const ROLES: RoleName[] = ["Admin", "Doctor", "Nurse", "Patient", "Receptionist", "Auditor"];
@@ -229,8 +224,17 @@ export function UsersPage() {
   const [selectedPatientForAssignment, setSelectedPatientForAssignment] = useState<string>("");
 
   const usersQuery = useQuery({ queryKey: ["users"], queryFn: listUsers });
-  const patientsQuery = useQuery({ queryKey: ["patients"], queryFn: listPatients });
-  const assignmentsQuery = useQuery({ queryKey: ["assignments"], queryFn: listAssignments });
+  // listPatients expects an optional query string, but useQuery passes a context object.
+  // Wrap it in a zero‑argument function to satisfy the QueryFunction signature.
+  // Explicit generic types help TypeScript infer the shape of the data.
+  const patientsQuery = useQuery<Patient[], Error>({
+    queryKey: ["patients"],
+    queryFn: () => listPatients(),
+  });
+  const assignmentsQuery = useQuery<Assignment[], Error>({
+    queryKey: ["assignments"],
+    queryFn: listAssignments,
+  });
 
   const {
     register,
@@ -318,14 +322,6 @@ export function UsersPage() {
     });
   }, [usersQuery.data, searchQuery, roleFilter, statusFilter, activeTab]);
 
-  // Group users by role for the tabs
-  const usersByRole = useMemo(() => {
-    if (!usersQuery.data) return {};
-    return ROLES.reduce((acc, role) => {
-      acc[role] = usersQuery.data.filter(u => u.role.name === role);
-      return acc;
-    }, {} as Record<RoleName, AuthUser[]>);
-  }, [usersQuery.data]);
 
   const openEditDialog = (user: AuthUser) => {
     setSelectedUser(user);
