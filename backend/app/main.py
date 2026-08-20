@@ -75,6 +75,10 @@ app = FastAPI(
 async def https_redirect(request: Request, call_next):
     """Redirect HTTP to HTTPS in production environments."""
     if settings.environment == "production":
+        # Skip redirect for ALB health checks
+        if request.url.path == "/api/health":
+            return await call_next(request)
+
         # Check for HTTPS or forwarded proto header
         is_https = request.url.scheme == "https" or request.headers.get("X-Forwarded-Proto") == "https"
         if not is_https:
