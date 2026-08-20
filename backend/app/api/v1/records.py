@@ -78,31 +78,40 @@ def list_records(
             creator = user_repository.get_by_id(db, record.created_by)
             data["created_by_name"] = f"{creator.first_name} {creator.last_name}" if creator else None
             
+            # Get signatures for the record (for count/display purposes)
+            # This is safe to show even without content access - just the count
+            from app.repositories.signatures_repository import get_by_record_id
+            signatures = get_by_record_id(db, record.id)
+            signature_count = len(signatures)
+            
             if can_view_content:
                 # Phase 4: Decrypt record content
                 content = record_service.get_decrypted_record_content(record)
                 
                 # Verify record integrity
-                integrity_ok, signatures = record_service.verify_record_integrity(record, content)
+                integrity_ok, verified_signatures = record_service.verify_record_integrity(record, content)
                 
                 data["content"] = content
                 data["integrity_ok"] = integrity_ok
-                data["signed_by"] = signatures[0].signer_id if signatures else None
-                data["signature_algorithm"] = signatures[0].algorithm if signatures else None
+                data["signed_by"] = verified_signatures[0].signer_id if verified_signatures else None
+                data["signature_algorithm"] = verified_signatures[0].algorithm if verified_signatures else None
                 data["hash"] = record.hash
                 data["signatures"] = [
                     {"signer_id": str(s.signer_id), "algorithm": s.algorithm, "created_at": s.created_at.isoformat()}
-                    for s in signatures
+                    for s in verified_signatures
                 ]
                 data["access_denied"] = False
             else:
                 # No consent - show metadata only, hide content
+                # But still show signature count for overview stats
                 data["content"] = None
                 data["integrity_ok"] = None
-                data["signed_by"] = None
-                data["signature_algorithm"] = None
+                data["signed_by"] = signatures[0].signer_id if signatures else None
+                data["signature_algorithm"] = signatures[0].algorithm if signatures else None
                 data["hash"] = None
+                # Return empty signatures array but include count for UI
                 data["signatures"] = []
+                data["signature_count"] = signature_count  # For overview stats
                 data["access_denied"] = True
                 data["access_denied_reason"] = "Patient consent required to view this record"
 
@@ -199,6 +208,82 @@ def get_record(
 
         db.commit()
         return success(data=data)
+
+
+@router.post("/{record_id}/admin-override")
+def admin_override_view(
+    record_id: uuid.UUID,
+    reason: str = Query(..., min_length=20),
+    current_user: User = Depends(require_role(RoleName.ADMIN)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Admin override to view a record without normal consent.
+    
+    Only admins can use this endpoint. The admin must provide a reason
+    (minimum 20 characters) for the override, which is logged for audit.
+    """
+    from app.services.audit_service import AuditService, AuditPriority
+    
+    try:
+        # Get record with admin override
+        record = record_service.get_record(db, current_user, record_id, is_admin_override=True)
+        
+        # Log the admin override for audit
+        AuditService.persist_audit_entry(
+            db=db,
+            action="record.admin_override",
+            user_id=current_user.id,
+            patient_id=record.patient_id,
+            status="success",
+            reason=f"Admin override view: {record.record_type} record. Reason: {reason}",
+            priority=AuditPriority.HIGH
+        )
+        
+        # Decrypt and return content
+        content = record_service.get_decrypted_record_content(record)
+        integrity_ok, signatures = record_service.verify_record_integrity(record, content)
+        
+        record_out = RecordOut.model_validate(record)
+        data = record_out.model_dump(mode="json")
+        data["content"] = content
+        data["integrity_ok"] = integrity_ok
+        data["signed_by"] = signatures[0].signer_id if signatures else None
+        data["signature_algorithm"] = signatures[0].algorithm if signatures else None
+        data["hash"] = record.hash
+        data["signatures"] = [
+            {"signer_id": str(s.signer_id), "algorithm": s.algorithm, "created_at": s.created_at.isoformat()}
+            for s in signatures
+        ]
+        data["access_denied"] = False
+        data["admin_override"] = True  # Flag to indicate this was an override
+        
+        db.commit()
+        return success(data=data)
+    except CryptoError:
+        # Decryption failed
+        record = record_service.get_record(db, current_user, record_id, is_admin_override=True)
+        
+        AuditService.persist_audit_entry(
+            db=db,
+            action="record.admin_override",
+            user_id=current_user.id,
+            patient_id=record.patient_id,
+            status="error",
+            reason=f"Admin override view failed: {record.record_type} record. Reason: {reason}",
+            priority=AuditPriority.HIGH
+        )
+        
+        record_out = RecordOut.model_validate(record)
+        data = record_out.model_dump(mode="json")
+        data["content"] = None
+        data["integrity_ok"] = False
+        data["access_denied"] = True
+        data["access_denied_reason"] = "Unable to decrypt record"
+        
+        db.commit()
+        return success(data=data)
+    except (NotFoundError, PermissionError_) as exc:
+        raise to_http_error(exc) from exc
 
 
 @router.put("/{record_id}")

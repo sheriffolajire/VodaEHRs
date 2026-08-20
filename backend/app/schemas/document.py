@@ -16,6 +16,7 @@ class DocumentOut(BaseModel):
     content_type: str
     size_bytes: int
     uploaded_at: datetime
+    uploaded_by: uuid.UUID
     
     # Encryption status for frontend display
     encrypted: bool = False

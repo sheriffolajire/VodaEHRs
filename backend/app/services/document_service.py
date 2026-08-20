@@ -12,10 +12,12 @@ from app.audit.logger import AuditEvent, record_event
 from app.core.config import settings
 from app.crypto import keys, encryption
 from app.models.medical_document import MedicalDocument
+from app.models.role import RoleName
 from app.models.user import User
 from app.repositories import document_repository
 from app.services import authorization
-from app.services.exceptions import CryptoError, NotFoundError, ValidationError
+from app.services.audit_service import AuditService, AuditPriority
+from app.services.exceptions import CryptoError, NotFoundError, PermissionError_, ValidationError
 from app.storage import document_storage
 
 
@@ -92,20 +94,99 @@ def upload_document(
     return document
 
 
-def list_documents(db: Session, actor: User, patient_id: uuid.UUID) -> list[MedicalDocument]:
-    """List a patient's document metadata after verifying access."""
+def list_documents(
+    db: Session, 
+    actor: User, 
+    patient_id: uuid.UUID,
+    is_admin_override: bool = False
+) -> list[MedicalDocument]:
+    """List a patient's document metadata after verifying access and consent.
+    
+    Layer 3: Resource Access (ensure_patient_access)
+    Layer 4: Consent (ensure_consent) - Documents require 'document' consent
+    """
+    # Layer 3: Resource Access
     authorization.ensure_patient_access(db, actor, patient_id)
+    
+    # Layer 4: Consent Check
+    # Patients can always see their own documents (checked in ensure_consent)
+    # Uploaders (clinicians) can always see their own uploaded documents
+    # Others need explicit consent or emergency access
+    if actor.role.name == RoleName.PATIENT:
+        # Patients have full access to their own documents via ensure_consent
+        authorization.ensure_consent(
+            db, actor, patient_id, 
+            authorization.ResourceType.DOCUMENT,
+            is_admin_override
+        )
+        return document_repository.list_for_patient(db, patient_id)
+    
+    if actor.role.name not in (RoleName.ADMIN, RoleName.RECEPTIONIST):
+        try:
+            authorization.ensure_consent(
+                db, actor, patient_id, 
+                authorization.ResourceType.DOCUMENT,
+                is_admin_override
+            )
+        except PermissionError_:
+            # If no consent, only return documents uploaded by this clinician
+            all_docs = document_repository.list_for_patient(db, patient_id)
+            return [d for d in all_docs if d.uploaded_by == actor.id]
+    
     return document_repository.list_for_patient(db, patient_id)
 
 
 def get_document_for_download(
-    db: Session, actor: User, document_id: uuid.UUID
+    db: Session, 
+    actor: User, 
+    document_id: uuid.UUID,
+    is_admin_override: bool = False
 ) -> tuple[MedicalDocument, BinaryIO]:
-    """Return metadata and a decrypted stream for a document the actor may access."""
+    """Return metadata and a decrypted stream for a document the actor may access.
+    
+    Layer 3: Resource Access (ensure_patient_access)
+    Layer 4: Consent (ensure_consent) - Documents require 'document' consent
+    Layer 5: Integrity (decrypt + verify hash)
+    """
     document = document_repository.get_by_id(db, document_id)
     if document is None:
         raise NotFoundError("Document not found.")
+    
+    # Layer 3: Resource Access
     authorization.ensure_patient_access(db, actor, document.patient_id)
+    
+    # Layer 4: Consent Check
+    # Uploaders can always access their own documents
+    # Patients can always access their own documents (via ensure_consent)
+    # Others need explicit consent or emergency access
+    if document.uploaded_by != actor.id:
+        # Patients need consent check for documents they didn't upload
+        # Clinicians need consent check for documents they didn't upload
+        authorization.ensure_consent(
+            db, actor, document.patient_id,
+            authorization.ResourceType.DOCUMENT,
+            is_admin_override
+        )
+    
+    # Download permission:
+    # - Document creator (uploader) can always download
+    # - Patient can always download their own documents
+    # - Admin with override can download
+    # - Others have view-only access to metadata
+    can_download = (
+        document.uploaded_by == actor.id or  # Uploader
+        actor.role.name == RoleName.PATIENT or  # Patient owns the document
+        is_admin_override  # Admin with emergency override
+    )
+    
+    if not can_download:
+        raise PermissionError_(
+            "Only the document creator or patient can download this document. "
+            "Other users have view-only access to document metadata. "
+            "Use emergency override if urgent access is required."
+        )
+    
+    # Layer 5: Integrity verification happens during decryption
 
     # Get encrypted data from MinIO
     encrypted_stream = document_storage.open_object_stream(document.storage_key)
@@ -126,11 +207,23 @@ def get_document_for_download(
                 aes_key
             )
             
-            # Verify integrity
+            # Verify integrity (Layer 5)
             if document.aes_key_hash:
                 expected_hash = base64.b64encode(hashlib.sha256(decrypted_data).digest()).decode('ascii')
                 if expected_hash != document.aes_key_hash:
                     raise CryptoError("Document integrity check failed")
+
+            # Audit log the document access (Layer 5 - Audit)
+            AuditService.persist_audit_entry(
+                db=db,
+                action="document.view",
+                user_id=actor.id,
+                patient_id=document.patient_id,
+                status="success",
+                reason=f"Downloaded document: {document.filename}",
+                priority=AuditPriority.MEDIUM
+            )
+            db.commit()
 
             # Return decrypted content
             return document, io.BytesIO(decrypted_data)

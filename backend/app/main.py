@@ -11,6 +11,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.v1 import api_router
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
+from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.schemas.response import failure
 from app.storage.document_storage import ensure_bucket
@@ -68,14 +69,34 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+# --- HTTPS Enforcement Middleware ---
+@app.middleware("http")
+async def https_redirect(request: Request, call_next):
+    """Redirect HTTP to HTTPS in production environments."""
+    if settings.environment == "production":
+        # Check for HTTPS or forwarded proto header
+        is_https = request.url.scheme == "https" or request.headers.get("X-Forwarded-Proto") == "https"
+        if not is_https:
+            https_url = str(request.url.replace(scheme="https"))
+            return JSONResponse(
+                status_code=307,
+                headers={"Location": https_url},
+                content={"message": "Redirecting to HTTPS"}
+            )
+    return await call_next(request)
+
+
 # --- Middleware ---
+# Rate limiting first (before auth)
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
 
 

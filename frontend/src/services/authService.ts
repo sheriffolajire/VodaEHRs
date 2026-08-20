@@ -1,5 +1,4 @@
 import { apiClient } from "@/services/apiClient";
-import { clearAccessToken, setAccessToken } from "@/services/tokenStorage";
 import type { SuccessResponse } from "@/types/api";
 import type { AuthUser, LoginResponse } from "@/types/auth";
 
@@ -8,7 +7,8 @@ export async function login(email: string, password: string): Promise<AuthUser> 
     email,
     password,
   });
-  setAccessToken(data.data.access_token);
+  // Access token is now stored in HttpOnly cookie by the server
+  // No need to manually store it
   return data.data.user;
 }
 
@@ -22,11 +22,14 @@ export async function logout(): Promise<void> {
   try {
     await apiClient.post("/auth/logout");
   } catch {
-    // Ignore errors; we will clear local token regardless.
+    // Ignore errors; server will clear cookies
   }
-  clearAccessToken();
 }
 
 export async function requestPasswordReset(email: string): Promise<void> {
   await apiClient.post("/auth/password-reset/request", { email });
+}
+
+export async function confirmPasswordReset(token: string, newPassword: string): Promise<void> {
+  await apiClient.post("/auth/password-reset/confirm", { token, new_password: newPassword });
 }

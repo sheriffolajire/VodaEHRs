@@ -19,13 +19,7 @@ export interface AuthUser {
   created_at: string;
 }
 
-/** Response shape for a successful login, containing only the access token. */
-export interface AccessTokenResponse {
-  access_token: string;
-  token_type: string;
-}
-
-/** Response shape for the login endpoint, returning the access token and user info. */
-export interface LoginResponse extends AccessTokenResponse {
+/** Response shape for the cookie-auth login endpoint. */
+export interface LoginResponse {
   user: AuthUser;
 }

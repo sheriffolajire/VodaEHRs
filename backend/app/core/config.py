@@ -1,8 +1,19 @@
 """Application configuration loaded from environment variables."""
 
+import os
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Explicitly load .env from project root before Settings is defined
+from dotenv import load_dotenv
+
+# Find project root (3 levels up from this file: app/core/config.py -> backend/)
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+env_path = PROJECT_ROOT / ".env"
+if env_path.exists():
+    load_dotenv(env_path, override=True)
 
 
 class Settings(BaseSettings):
@@ -17,7 +28,7 @@ class Settings(BaseSettings):
     # `frontend/.env`. By using a relative path that climbs to the repository
     # root we ensure a single source of truth.
     model_config = SettingsConfigDict(
-        env_file="../.env",
+        env_file="../../../.env",
         env_file_encoding="utf-8",
         extra="ignore"
     )

@@ -12,7 +12,7 @@ export interface Consent {
   clinician_name: string | null;
   record_type: string;
   granted: boolean;
-  granted_at: string;
+  created_at: string;
   revoked_at: string | null;
   expires_at: string | null;
   is_active: boolean;

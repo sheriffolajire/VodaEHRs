@@ -1,17 +1,20 @@
 /** My Records Page for Patients.
  *
- * Patients can view their own medical records.
+ * Patients can view their own medical records and documents.
  */
 import { useQuery } from "@tanstack/react-query";
-import { FileText, Calendar, User, ShieldCheck, AlertCircle } from "lucide-react";
+import { FileText, Calendar, User, ShieldCheck, AlertCircle, Download, File } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { listRecords } from "@/services/clinicalService";
+import { listRecords, listDocuments, downloadDocument } from "@/services/clinicalService";
 import { apiClient } from "@/services/apiClient";
 import type { SuccessResponse } from "@/types/api";
 import type { Patient } from "@/types/clinical";
+import type { MedicalDocument } from "@/types/document";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { useState } from "react";
 // Note: RecordIntegrityDisplay temporarily disabled due to compatibility issues
 
 const recordTypeLabels: Record<string, string> = {
@@ -49,6 +52,7 @@ export function MyRecordsPage() {
   });
 
   const patientId = patientQuery.data?.id;
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   // Fetch records once we have the patient ID
   const recordsQuery = useQuery({
@@ -56,6 +60,16 @@ export function MyRecordsPage() {
     queryFn: async () => {
       if (!patientId) throw new Error("No patient ID found");
       return listRecords(patientId);
+    },
+    enabled: !!patientId,
+  });
+
+  // Fetch documents once we have the patient ID
+  const documentsQuery = useQuery({
+    queryKey: ["my-documents", patientId],
+    queryFn: async () => {
+      if (!patientId) throw new Error("No patient ID found");
+      return listDocuments(patientId);
     },
     enabled: !!patientId,
   });
@@ -210,6 +224,96 @@ export function MyRecordsPage() {
           </div>
         </div>
       )}
+
+      {/* Documents Section */}
+      <div className="space-y-4">
+        <div>
+          <h3 className="text-lg font-semibold">My Documents</h3>
+          <p className="text-sm text-muted-foreground">
+            View and download your medical documents
+          </p>
+        </div>
+
+        {documentsQuery.isLoading && (
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {documentsQuery.isError && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              {documentsQuery.error instanceof Error
+                ? documentsQuery.error.message
+                : "Failed to load documents"}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {documentsQuery.data && documentsQuery.data.length === 0 && (
+          <Card>
+            <CardContent className="p-6 text-center">
+              <File className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-50" />
+              <p className="text-muted-foreground">No documents found.</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Your documents will appear here once they are uploaded by your clinician.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {documentsQuery.data && documentsQuery.data.length > 0 && (
+          <div className="grid gap-4">
+            {documentsQuery.data.map((doc: MedicalDocument) => (
+              <Card key={doc.id} className="overflow-hidden">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                        <FileText className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{doc.filename}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {(doc.size_bytes / 1024).toFixed(1)} KB • Uploaded{" "}
+                          {new Date(doc.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setDownloadError(null);
+                        downloadDocument(doc.id, doc.filename).catch((err) => {
+                          setDownloadError(
+                            err instanceof Error ? err.message : "Download failed"
+                          );
+                        });
+                      }}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Download
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {downloadError && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{downloadError}</AlertDescription>
+          </Alert>
+        )}
+      </div>
     </div>
   );
 }

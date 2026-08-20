@@ -60,6 +60,7 @@ export interface MedicalDocument {
   content_type: string;
   size_bytes: number;
   uploaded_at: string;
+  uploaded_by: string;
   encrypted: boolean;
   aes_key_hash: string | null;
 }

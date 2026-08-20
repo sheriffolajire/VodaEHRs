@@ -19,6 +19,8 @@ const recordTypeLabels: Record<string, string> = {
   lab_result: "Lab Results",
   imaging: "Imaging",
   other: "Other",
+  document: "Documents",
+  appointment: "Appointments",
 };
 
 export function ConsentManager() {
@@ -130,7 +132,7 @@ export function ConsentManager() {
                           </Badge>
                           <span className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />
-                            Granted {new Date(consent.granted_at).toLocaleDateString()}
+                            Granted {new Date(consent.created_at).toLocaleDateString()}
                           </span>
                         </div>
                         {consent.expires_at && (

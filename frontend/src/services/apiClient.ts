@@ -1,43 +1,43 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import type { ErrorResponse } from "@/types/api";
 import type { SuccessResponse } from "@/types/api";
-import type { AccessTokenResponse } from "@/types/auth";
-import { clearAccessToken, getAccessToken, setAccessToken } from "@/services/tokenStorage";
 
 const baseURL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+
+/** Emitted when a protected request cannot be recovered with a token refresh. */
+export const AUTH_SESSION_EXPIRED_EVENT = "voda:auth-session-expired";
 
 export const apiClient = axios.create({
   baseURL,
   headers: { "Content-Type": "application/json" },
-});
-
-// Attach the current access token to every outgoing request.
-apiClient.interceptors.request.use((config) => {
-  const token = getAccessToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
+  withCredentials: true, // Important: Send cookies with requests
 });
 
 /**
  * Refresh runs on a bare axios instance so it never re-enters this interceptor.
  * A shared promise coalesces concurrent 401s into a single refresh call.
  */
-let refreshInFlight: Promise<string | null> | null = null;
+type RefreshResult = "refreshed" | "expired" | "unavailable";
 
-async function refreshAccessToken(): Promise<string | null> {
+let refreshInFlight: Promise<RefreshResult> | null = null;
+
+async function refreshAccessToken(): Promise<RefreshResult> {
   try {
-    const { data } = await axios.post<SuccessResponse<AccessTokenResponse>>(
+    // Cookie is sent automatically with withCredentials: true
+    await axios.post<SuccessResponse<void>>(
       `${baseURL}/auth/refresh`,
       undefined,
-      { headers: { "Content-Type": "application/json" } },
+      {
+        headers: { "Content-Type": "application/json" },
+        withCredentials: true, // Important: Send cookies
+      },
     );
-    setAccessToken(data.data.access_token);
-    return data.data.access_token;
-  } catch {
-    clearAccessToken();
-    return null;
+    return "refreshed";
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      return "expired";
+    }
+    return "unavailable";
   }
 }
 
@@ -51,15 +51,20 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401 && original && !original._retried && !isAuthCall) {
       original._retried = true;
       refreshInFlight = refreshInFlight ?? refreshAccessToken();
-      const newToken = await refreshInFlight;
+      const refreshResult = await refreshInFlight;
       refreshInFlight = null;
 
-      if (newToken) {
-        original.headers.Authorization = `Bearer ${newToken}`;
+      if (refreshResult === "refreshed") {
+        // Cookie is automatically sent, just retry the request
         return apiClient(original);
       }
-      // Refresh failed: force a clean logout by redirecting to the login page.
-      window.location.assign("/login");
+
+      // Let React clear the session and route protected pages to login. A hard
+      // navigation here would remount AuthProvider on /login and repeat the
+      // unauthenticated request cycle forever.
+      if (refreshResult === "expired" && typeof window !== "undefined") {
+        window.dispatchEvent(new Event(AUTH_SESSION_EXPIRED_EVENT));
+      }
     }
 
     const message = error.response?.data?.message ?? error.message ?? "Unexpected error";

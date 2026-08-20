@@ -1,6 +1,8 @@
 """Medical document upload/download endpoints."""
 
 import uuid
+from unicodedata import normalize
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -22,15 +24,49 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 _UPLOADERS = (RoleName.DOCTOR, RoleName.NURSE)
 
 
+def _attachment_content_disposition(filename: str) -> str:
+    """Return an RFC 5987-compatible attachment header for any filename.
+
+    Response headers must be Latin-1, but uploaded filenames can contain any
+    Unicode character. Supply a safe ASCII fallback for older clients and an
+    encoded UTF-8 ``filename*`` value for clients that support it.
+    """
+    safe_filename = filename.replace("\r", "").replace("\n", "") or "download"
+    ascii_filename = normalize("NFKD", safe_filename).encode("ascii", "ignore").decode("ascii")
+    ascii_filename = ascii_filename.replace("\\", "_").replace('"', "'")
+    ascii_filename = "".join(
+        character if 32 <= ord(character) <= 126 else "_"
+        for character in ascii_filename
+    ) or "download"
+
+    return (
+        f'attachment; filename="{ascii_filename}"; '
+        f"filename*=UTF-8''{quote(safe_filename, safe='')}"
+    )
+
+
 @router.get("")
 def list_documents(
     patient_id: uuid.UUID = Query(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """List a patient's document metadata (access checked in the service)."""
+    """List a patient's document metadata (access checked in the service).
+    
+    Emergency override: If the user has active emergency access for this patient,
+    they can view all documents (not just their own uploads).
+    """
+    from app.repositories import emergency_access_repository
+    
+    # Check for emergency access (break-glass override)
+    has_emergency = emergency_access_repository.has_active_emergency_access(
+        db, current_user.id, patient_id
+    )
+    
     try:
-        documents = document_service.list_documents(db, current_user, patient_id)
+        documents = document_service.list_documents(
+            db, current_user, patient_id, is_admin_override=has_emergency
+        )
     except (NotFoundError, PermissionError_) as exc:
         raise to_http_error(exc) from exc
 
@@ -124,9 +160,27 @@ def download_document(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
-    """Stream a document's bytes after verifying access."""
+    """Stream a document's bytes after verifying access.
+    
+    Emergency override: If the user has active emergency access for this patient,
+    they can download the document even if they are not the creator.
+    """
+    from app.repositories import document_repository, emergency_access_repository
+    
+    # First get the document to find the patient_id
+    document = document_repository.get_by_id(db, document_id)
+    if document is None:
+        raise to_http_error(NotFoundError("Document not found"))
+    
+    # Check for emergency access (break-glass override)
+    has_emergency = emergency_access_repository.has_active_emergency_access(
+        db, current_user.id, document.patient_id
+    )
+    
     try:
-        document, stream = document_service.get_document_for_download(db, current_user, document_id)
+        document, stream = document_service.get_document_for_download(
+            db, current_user, document_id, is_admin_override=has_emergency
+        )
     except (NotFoundError, PermissionError_) as exc:
         raise to_http_error(exc) from exc
 
@@ -134,5 +188,52 @@ def download_document(
     return StreamingResponse(
         stream,
         media_type=document.content_type,
-        headers={"Content-Disposition": f'attachment; filename="{document.filename}"'},
+        headers={"Content-Disposition": _attachment_content_disposition(document.filename)},
+    )
+
+
+@router.post("/{document_id}/admin-override")
+def admin_override_download(
+    document_id: uuid.UUID,
+    reason: str = Form(..., min_length=20),
+    current_user: User = Depends(require_role(RoleName.ADMIN)),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """Admin override to download a document without being the creator.
+    
+    Only admins can use this endpoint. The admin must provide a reason
+    (minimum 20 characters) for the override, which is logged for audit.
+    """
+    from app.repositories import document_repository
+    from app.services.audit_service import AuditService, AuditPriority
+    
+    # Get the document
+    document = document_repository.get_by_id(db, document_id)
+    if document is None:
+        raise to_http_error(NotFoundError("Document not found"))
+    
+    # Log the admin override for audit
+    AuditService.persist_audit_entry(
+        db=db,
+        action="document.admin_override",
+        user_id=current_user.id,
+        patient_id=document.patient_id,
+        status="success",
+        reason=f"Admin override download: {document.filename}. Reason: {reason}",
+        priority=AuditPriority.HIGH
+    )
+    
+    try:
+        # Pass is_admin_override=True to allow download
+        document, stream = document_service.get_document_for_download(
+            db, current_user, document_id, is_admin_override=True
+        )
+    except (NotFoundError, PermissionError_) as exc:
+        raise to_http_error(exc) from exc
+
+    db.commit()
+    return StreamingResponse(
+        stream,
+        media_type=document.content_type,
+        headers={"Content-Disposition": _attachment_content_disposition(document.filename)},
     )

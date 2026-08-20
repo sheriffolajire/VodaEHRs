@@ -3,6 +3,10 @@ name = "voda-ehrs-backend"
 version = "0.1.0"
 description = "Voda EHRs - Zero-Trust Electronic Health Records backend"
 requires-python = ">=3.11"
+dependencies = [
+    "redis>=8.1.0",
+    "requests>=2.34.2",
+]
 
 [tool.black]
 line-length = 100

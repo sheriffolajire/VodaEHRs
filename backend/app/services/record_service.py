@@ -102,7 +102,7 @@ def create_record(db: Session, actor: User, payload: RecordCreate) -> MedicalRec
         status="success",
         reason=f"Created {payload.record_type.value} record: {record.title}",
         ip_address=None,
-        priority=AuditPriority.NORMAL
+        priority=AuditPriority.MEDIUM
     )
 
     # Return the newly created record
@@ -373,7 +373,7 @@ def update_record(
         patient_id=record.patient_id,
         status="success",
         reason=f"Updated record {record_id}",
-        priority=AuditPriority.HIGH if is_admin_override else AuditPriority.NORMAL
+        priority=AuditPriority.HIGH if is_admin_override else AuditPriority.MEDIUM
     )
     
     return record

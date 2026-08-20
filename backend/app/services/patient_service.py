@@ -60,7 +60,7 @@ def register_patient(db: Session, payload: PatientCreate, actor: User) -> Patien
         status="success",
         reason=f"Registered patient {patient.first_name} {patient.last_name} ({hospital_number})",
         ip_address=None,
-        priority=AuditPriority.NORMAL
+        priority=AuditPriority.MEDIUM
     )
     return patient
 
@@ -83,7 +83,7 @@ def search_patients(
             status="success",
             reason=f"Searched patients with query: '{query}'",
             ip_address=None,
-            priority=AuditPriority.NORMAL
+            priority=AuditPriority.MEDIUM
         )
     return patients
 
@@ -109,7 +109,7 @@ def get_patient(db: Session, actor: User, patient_id: uuid.UUID) -> Patient:
         status="success",
         reason=f"Viewed patient {patient.first_name} {patient.last_name} ({patient.hospital_number})",
         ip_address=None,
-        priority=AuditPriority.NORMAL
+        priority=AuditPriority.MEDIUM
     )
     return patient
 
@@ -144,6 +144,6 @@ def update_patient(
         status="success",
         reason=f"Updated patient {patient.first_name} {patient.last_name} ({patient.hospital_number})",
         ip_address=None,
-        priority=AuditPriority.NORMAL
+        priority=AuditPriority.MEDIUM
     )
     return patient

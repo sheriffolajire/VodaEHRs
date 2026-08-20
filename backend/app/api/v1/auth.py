@@ -3,21 +3,40 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.database.session import get_db
 from app.schemas.auth import (
     LoginRequest,
     LogoutRequest,
     PasswordResetConfirm,
     PasswordResetRequest,
-    RefreshRequest,
 )
 from app.schemas.response import success
 from app.schemas.user import UserOut
 from app.services import auth_service
-from app.core.config import settings
 from app.services.exceptions import AuthError, ValidationError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+_REFRESH_COOKIE_PATH = f"{settings.api_v1_prefix}/auth"
+_LEGACY_REFRESH_COOKIE_PATH = f"{_REFRESH_COOKIE_PATH}/refresh"
+
+
+def _use_secure_cookies() -> bool:
+    """Require HTTPS cookies in production while allowing local HTTP development."""
+    return settings.environment == "production"
+
+
+def _delete_auth_cookies(response: Response) -> None:
+    """Clear current cookies and the short-path refresh cookie used by older clients."""
+    cookie_options = {
+        "httponly": True,
+        "secure": _use_secure_cookies(),
+        "samesite": "strict",
+    }
+    response.delete_cookie(key="access_token", path="/", **cookie_options)
+    response.delete_cookie(key="refresh_token", path=_REFRESH_COOKIE_PATH, **cookie_options)
+    response.delete_cookie(key="refresh_token", path=_LEGACY_REFRESH_COOKIE_PATH, **cookie_options)
 
 
 def _client_ip(request: Request) -> str | None:
@@ -40,21 +59,40 @@ def login(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
 
     db.commit()
-    # Set refresh token as HttpOnly, Secure, SameSite=Strict cookie.
+    # Remove any cookie written by the previous, more-specific path before
+    # setting the current one. Otherwise browsers can send two refresh tokens.
+    response.delete_cookie(
+        key="refresh_token",
+        httponly=True,
+        secure=_use_secure_cookies(),
+        samesite="strict",
+        path=_LEGACY_REFRESH_COOKIE_PATH,
+    )
+    # Set the access token as an HttpOnly, SameSite=Strict cookie.
+    # This prevents XSS attacks from stealing the access token.
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=_use_secure_cookies(),
+        samesite="strict",
+        path="/",
+        max_age=settings.access_token_expire_minutes * 60,  # 15 minutes
+    )
+    # Set the refresh token as an HttpOnly, SameSite=Strict cookie.
     # The cookie will be sent automatically on subsequent requests.
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=True,
+        secure=_use_secure_cookies(),
         samesite="strict",
-        path="/api/v1/auth/refresh",
+        path=_REFRESH_COOKIE_PATH,
         max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
     )
+    # Return user info only (no tokens in body)
     return success(
         data={
-            "access_token": access_token,
-            "token_type": "bearer",
             "user": UserOut.model_validate(user).model_dump(mode="json"),
         },
         message="Login successful.",
@@ -77,42 +115,57 @@ def refresh(
     if not refresh_token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token missing.")
     try:
-        access_token, new_refresh, _ = auth_service.refresh(
-            db, refresh_token, _client_ip(request)
-        )
+        access_token, new_refresh, _ = auth_service.refresh(db, refresh_token, _client_ip(request))
     except AuthError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
 
     db.commit()
+    response.delete_cookie(
+        key="refresh_token",
+        httponly=True,
+        secure=_use_secure_cookies(),
+        samesite="strict",
+        path=_LEGACY_REFRESH_COOKIE_PATH,
+    )
+    # Update the HttpOnly access token cookie with the new token.
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=_use_secure_cookies(),
+        samesite="strict",
+        path="/",
+        max_age=settings.access_token_expire_minutes * 60,  # 15 minutes
+    )
     # Update the HttpOnly refresh token cookie with the new token.
     response.set_cookie(
         key="refresh_token",
         value=new_refresh,
         httponly=True,
-        secure=True,
+        secure=_use_secure_cookies(),
         samesite="strict",
-        path="/api/v1/auth/refresh",
+        path=_REFRESH_COOKIE_PATH,
         max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
     )
     return success(
-        data={"access_token": access_token, "token_type": "bearer"},
         message="Token refreshed.",
     )
 
 
 @router.post("/logout")
 def logout(
-    payload: LogoutRequest,
     request: Request,
     response: Response,
     db: Session = Depends(get_db),
+    payload: LogoutRequest | None = None,
 ) -> dict:
-    # Prefer the HttpOnly cookie if the payload does not contain a token.
-    token = payload.refresh_token or request.cookies.get("refresh_token")
+    # Cookie-based clients do not send a token body; retain the body as a
+    # backward-compatible fallback for older clients.
+    token = request.cookies.get("refresh_token") or (payload.refresh_token if payload else None)
     if token:
         auth_service.logout(db, token, _client_ip(request))
-    # Clear the cookie on logout.
-    response.delete_cookie(key="refresh_token", path="/api/v1/auth/refresh")
+    # Clear both cookies, including the legacy refresh-cookie path.
+    _delete_auth_cookies(response)
     db.commit()
     return success(message="Logged out.")
 

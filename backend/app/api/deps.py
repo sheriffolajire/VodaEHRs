@@ -8,7 +8,7 @@ decryption are layered in later phases.
 import uuid
 from collections.abc import Callable
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,7 @@ _bearer = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
 ) -> User:
@@ -29,12 +30,22 @@ def get_current_user(
 
     This is the zero-trust entry point. It rejects missing, malformed, expired,
     or non-access tokens, and accounts that no longer exist or are disabled.
+    
+    Token is read from HttpOnly cookie first, then falls back to Authorization header
+    for backward compatibility during transition.
     """
-    if credentials is None:
+    # Try to get token from HttpOnly cookie first (secure)
+    token = request.cookies.get("access_token")
+    
+    # Fallback to Authorization header (for backward compatibility)
+    if not token and credentials:
+        token = credentials.credentials
+    
+    if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required.")
 
     try:
-        payload = decode_token(credentials.credentials)
+        payload = decode_token(token)
     except Exception as exc:  # noqa: BLE001 - normalized to 401 at the boundary
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token.") from exc
 

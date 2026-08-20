@@ -92,6 +92,26 @@ CLINICIAN_USERS = [
     }
 ]
 
+# Sample receptionist users
+RECEPTIONIST_USERS = [
+    {
+        "email": "receptionist.johnson@hospital.com",
+        "password": "SecurePass123!",
+        "first_name": "Maria",
+        "last_name": "Johnson",
+        "department": "Front Desk",
+        "employee_id": "REC-2024-001"
+    },
+    {
+        "email": "receptionist.williams@hospital.com",
+        "password": "SecurePass123!",
+        "first_name": "David",
+        "last_name": "Williams",
+        "department": "Patient Services",
+        "employee_id": "REC-2024-002"
+    }
+]
+
 # Sample patients with realistic demographics
 PATIENTS = [
     {
@@ -256,6 +276,39 @@ def seed_users(db: Session, admin_user_id: uuid.UUID) -> List[User]:
             f"Created clinician {clinician_data['first_name']} {clinician_data['last_name']}"
         )
     
+    # Seed receptionist users
+    receptionist_role = role_repository.get_by_name(db, RoleName.RECEPTIONIST)
+    if receptionist_role:
+        for receptionist_data in RECEPTIONIST_USERS:
+            # Check if user already exists
+            existing_user = user_repository.get_by_email(db, receptionist_data["email"])
+            if existing_user:
+                # Update password to ensure it matches expected test password
+                existing_user.password_hash = hash_password(receptionist_data["password"])
+                db.add(existing_user)
+                db.flush()
+                users.append(existing_user)
+                logger.info(f"Updated receptionist {receptionist_data['email']}")
+                continue
+            
+            # Create receptionist user
+            user = User(
+                first_name=receptionist_data["first_name"],
+                last_name=receptionist_data["last_name"],
+                email=receptionist_data["email"],
+                password_hash=hash_password(receptionist_data["password"]),
+                role_id=receptionist_role.id,
+                status=UserStatus.ACTIVE,
+            )
+            db.add(user)
+            db.flush()
+            users.append(user)
+            logger.info(
+                f"Created receptionist {receptionist_data['first_name']} {receptionist_data['last_name']}"
+            )
+    else:
+        logger.warning("Receptionist role not found, skipping receptionist seeding")
+    
     # Seed patient users
     patient_user_mappings = {
         "robert.wilson@email.com": {
@@ -295,6 +348,18 @@ def seed_users(db: Session, admin_user_id: uuid.UUID) -> List[User]:
             db.add(user)
             users.append(user)
             logger.info(f"Created patient user {user_data['email']}")
+    
+    db.flush()
+    
+    # Update patient records to match user emails
+    for patient_data in PATIENTS:
+        patient_email = patient_data["email"]
+        if patient_email in patient_user_mappings:
+            user_data = patient_user_mappings[patient_email]
+            patient = patient_repository.get_by_email(db, patient_email)
+            if patient:
+                patient.email = user_data["email"]
+                logger.info(f"Updated patient email from {patient_email} to {user_data['email']}")
     
     db.flush()
     return users

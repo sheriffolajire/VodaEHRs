@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models.consent import Consent
 from app.models.medical_record import RecordType
+from app.services.authorization import ResourceType
 
 
 def get_by_id(db: Session, consent_id: uuid.UUID) -> Consent | None:
@@ -21,7 +22,7 @@ def get_active_consent(
     db: Session,
     patient_id: uuid.UUID,
     clinician_id: uuid.UUID,
-    record_type: RecordType
+    record_type: RecordType | ResourceType
 ) -> Consent | None:
     """Get active consent for a specific patient/clinician/record_type combination.
     
@@ -98,7 +99,7 @@ def has_active_consent(
     db: Session,
     patient_id: uuid.UUID,
     clinician_id: uuid.UUID,
-    record_type: RecordType
+    record_type: RecordType | ResourceType
 ) -> bool:
     """Check if active consent exists for patient/clinician/record_type."""
     return get_active_consent(db, patient_id, clinician_id, record_type) is not None

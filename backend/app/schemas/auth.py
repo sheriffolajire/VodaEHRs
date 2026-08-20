@@ -13,7 +13,9 @@ class RefreshRequest(BaseModel):
 
 
 class LogoutRequest(BaseModel):
-    refresh_token: str
+    """Legacy logout payload; cookie-based clients do not need to send it."""
+
+    refresh_token: str | None = None
 
 
 class TokenPair(BaseModel):

@@ -18,6 +18,8 @@ export interface ApiRecord {
   content: string | null;
   hash: string | null;
   signatures: ApiSignature[];
+  /** Total number of signatures (available even when access_denied is true) */
+  signature_count?: number;
   /** True if the user cannot view the record content (needs consent) */
   access_denied?: boolean;
   /** Reason for access denial */

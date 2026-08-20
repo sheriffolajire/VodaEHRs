@@ -36,3 +36,56 @@ export async function setUserStatus(userId: string, status: UserStatus): Promise
   });
   return data.data;
 }
+
+export interface UpdateUserInput {
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  role?: RoleName;
+}
+
+export async function updateUser(userId: string, input: UpdateUserInput): Promise<AuthUser> {
+  const { data } = await apiClient.patch<SuccessResponse<AuthUser>>(`/users/${userId}`, input);
+  return data.data;
+}
+
+export async function deleteUser(userId: string): Promise<void> {
+  await apiClient.delete(`/users/${userId}`);
+}
+
+// Assignment management
+export interface Assignment {
+  id: string;
+  patient_id: string;
+  clinician_id: string;
+  assigned_by: string;
+  assigned_at: string;
+  revoked_at?: string;
+}
+
+export async function listAssignments(): Promise<Assignment[]> {
+  const { data } = await apiClient.get<SuccessResponse<Assignment[]>>("/assignments");
+  return data.data;
+}
+
+export async function listAssignmentsForPatient(patientId: string): Promise<Assignment[]> {
+  const { data } = await apiClient.get<SuccessResponse<Assignment[]>>(`/assignments/patient/${patientId}`);
+  return data.data;
+}
+
+export async function listAssignmentsForClinician(clinicianId: string): Promise<Assignment[]> {
+  const { data } = await apiClient.get<SuccessResponse<Assignment[]>>(`/assignments/clinician/${clinicianId}`);
+  return data.data;
+}
+
+export async function createAssignment(patientId: string, clinicianId: string): Promise<Assignment> {
+  const { data } = await apiClient.post<SuccessResponse<Assignment>>("/assignments", {
+    patient_id: patientId,
+    clinician_id: clinicianId,
+  });
+  return data.data;
+}
+
+export async function revokeAssignment(assignmentId: string): Promise<void> {
+  await apiClient.delete(`/assignments/${assignmentId}`);
+}

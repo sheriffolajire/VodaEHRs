@@ -57,4 +57,6 @@ class AssignmentOut(BaseModel):
     id: uuid.UUID
     patient_id: uuid.UUID
     clinician_id: uuid.UUID
+    assigned_by: uuid.UUID
     assigned_at: datetime
+    revoked_at: datetime | None = None

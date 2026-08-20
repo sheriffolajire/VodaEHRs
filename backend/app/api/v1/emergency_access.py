@@ -306,6 +306,9 @@ def revoke_emergency_access(
             db, current_user, emergency_id
         )
         
+        # Commit the transaction to persist the revocation
+        db.commit()
+        
         return success(
             data={
                 "id": str(emergency.id),
@@ -315,6 +318,7 @@ def revoke_emergency_access(
             message="Emergency access revoked successfully."
         )
     except (NotFoundError, PermissionError_) as exc:
+        db.rollback()
         raise to_http_error(exc) from exc
 
 

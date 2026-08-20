@@ -4,8 +4,12 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { Download, Search } from "lucide-react";
 import { listPatients, registerPatient } from "@/services/patientService";
+import { exportPatientsToCSV } from "@/services/exportService";
 import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
+import { showToast } from "@/lib/toast";
 
 // Only these roles may register a patient (mirrors the backend rule).
 const REGISTRAR_ROLES = ["Admin", "Receptionist"];
@@ -54,8 +58,13 @@ export function PatientsPage() {
       queryClient.invalidateQueries({ queryKey: ["patients"] });
       reset();
       setFormError(null);
+      showToast.success("Patient registered", "New patient has been successfully registered");
     },
-    onError: (error) => setFormError(error instanceof Error ? error.message : "Failed"),
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : "Failed";
+      setFormError(message);
+      showToast.error("Registration failed", message);
+    },
   });
 
   return (
@@ -152,12 +161,30 @@ export function PatientsPage() {
       )}
 
       <div className="rounded-lg border bg-card p-6">
-        <input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search by name, hospital number, or email"
-          className="mb-4 w-full rounded-md border bg-background px-3 py-2 text-sm"
-        />
+        <div className="flex gap-2 mb-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search by name, hospital number, or email"
+              className="w-full rounded-md border bg-background pl-10 pr-3 py-2 text-sm"
+            />
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (patientsQuery.data) {
+                exportPatientsToCSV(patientsQuery.data);
+                showToast.success("Export complete", "Patient data exported to CSV");
+              }
+            }}
+            disabled={!patientsQuery.data || patientsQuery.data.length === 0}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Export CSV
+          </Button>
+        </div>
         {patientsQuery.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
         {patientsQuery.isError && <p className="text-sm text-red-500">Failed to load patients.</p>}
         {patientsQuery.data && patientsQuery.data.length === 0 && (

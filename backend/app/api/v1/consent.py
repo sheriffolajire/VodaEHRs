@@ -12,13 +12,13 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_role
 from app.api.v1._errors import to_http_error
 from app.database.session import get_db
-from app.models.medical_record import RecordType
+from app.services.authorization import ResourceType
 from app.models.role import RoleName
 from app.models.user import User
 from app.schemas.response import success
 from app.services import consent_service
 from app.services.audit_service import AuditService
-from app.services.exceptions import NotFoundError, PermissionError_
+from app.services.exceptions import NotFoundError, PermissionError_, ValidationError
 
 router = APIRouter(prefix="/consent", tags=["consent"])
 
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/consent", tags=["consent"])
 class ConsentGrantRequest(BaseModel):
     """Request to grant consent."""
     clinician_id: uuid.UUID = Field(..., description="Clinician to grant access to")
-    record_type: RecordType = Field(..., description="Type of records covered")
+    record_type: ResourceType = Field(..., description="Type of records covered")
     expires_at: str | None = Field(
         None, 
         description="Optional expiry date (ISO 8601 format)"
@@ -157,10 +157,14 @@ def grant_consent(
         # Audit the consent grant
         AuditService.log_consent_grant(
             db,
-            patient_id=current_user.id,
+            user_id=current_user.id,
+            patient_id=consent.patient_id,
             clinician_id=request.clinician_id,
             record_type=request.record_type.value
         )
+        
+        # Commit the transaction
+        db.commit()
         
         return JSONResponse(
             status_code=status.HTTP_201_CREATED,
@@ -200,10 +204,14 @@ def revoke_consent(
         # Audit the consent revocation
         AuditService.log_consent_revoke(
             db,
-            patient_id=current_user.id,
+            user_id=current_user.id,
+            patient_id=consent.patient_id,
             clinician_id=consent.clinician_id,
             record_type=consent.record_type
         )
+        
+        # Commit the transaction
+        db.commit()
         
         return success(
             data={

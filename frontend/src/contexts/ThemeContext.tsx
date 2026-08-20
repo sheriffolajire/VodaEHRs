@@ -15,8 +15,20 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
+    const root = document.documentElement;
+    const isDark = theme === "dark";
+    
+    // Toggle dark class
+    root.classList.toggle("dark", isDark);
+    
+    // Also set data-theme attribute for CSS selectors
+    root.setAttribute("data-theme", theme);
+    
+    // Store in localStorage
     localStorage.setItem("voda-theme", theme);
+    
+    // Force a repaint to ensure styles are applied
+    root.style.colorScheme = isDark ? "dark" : "light";
   }, [theme]);
 
   const toggleTheme = () => setTheme((prev) => (prev === "light" ? "dark" : "light"));
