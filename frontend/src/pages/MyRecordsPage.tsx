@@ -281,7 +281,7 @@ export function MyRecordsPage() {
                         <p className="font-medium">{doc.filename}</p>
                         <p className="text-sm text-muted-foreground">
                           {(doc.size_bytes / 1024).toFixed(1)} KB • Uploaded{" "}
-                          {new Date(doc.created_at).toLocaleDateString()}
+                          {new Date(doc.uploaded_at).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
