@@ -9,13 +9,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Adjust copy paths because the build context is the repository root.
-# The Dockerfile resides in the backend directory, so we need to reference
-# files relative to the build context (the repository root).
-COPY backend/requirements.txt .
+
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY backend/. .
+COPY . .
 
 EXPOSE 8000
 
