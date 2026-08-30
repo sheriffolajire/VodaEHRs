@@ -116,12 +116,12 @@ def request_emergency_access(
 @router.get("")
 def list_emergency_access(
     status_filter: str | None = None,
-    current_user: User = Depends(require_role(RoleName.ADMIN)),
+    current_user: User = Depends(require_role(RoleName.ADMIN, RoleName.AUDITOR)),
     db: Session = Depends(get_db),
 ) -> dict:
     """List all emergency access requests.
     
-    Only admins can view all emergency access requests.
+    Only admins and auditors can view all emergency access requests.
     
     Args:
         status_filter: Filter by status (pending, approved, rejected)

@@ -34,12 +34,12 @@ def list_audit_logs(
     category: str | None = Query(None, description="Filter by category (auth, access, modify, consent, emergency, security, system)"),
     limit: int = Query(100, ge=1, le=1000, description="Number of results to return"),
     offset: int = Query(0, ge=0, description="Number of results to skip"),
-    current_user: User = Depends(require_role(RoleName.ADMIN)),
+    current_user: User = Depends(require_role(RoleName.ADMIN, RoleName.AUDITOR)),
     db: Session = Depends(get_db),
 ) -> dict:
     """List audit logs with optional filtering.
     
-    Only admins can view audit logs.
+    Only admins and auditors can view audit logs.
     """
     try:
         from app.models.audit_log import AuditCategory
@@ -108,7 +108,7 @@ def list_audit_logs(
 @router.get("/logs/{log_id}")
 def get_audit_log(
     log_id: uuid.UUID,
-    current_user: User = Depends(require_role(RoleName.ADMIN)),
+    current_user: User = Depends(require_role(RoleName.ADMIN, RoleName.AUDITOR)),
     db: Session = Depends(get_db),
 ) -> dict:
     """Get a specific audit log entry."""
@@ -151,7 +151,7 @@ def get_audit_log(
 
 @router.get("/chain-status")
 def get_chain_status(
-    current_user: User = Depends(require_role(RoleName.ADMIN)),
+    current_user: User = Depends(require_role(RoleName.ADMIN, RoleName.AUDITOR)),
     db: Session = Depends(get_db),
 ) -> dict:
     """Get the status of the audit hash chain.
@@ -167,7 +167,7 @@ def get_chain_status(
 
 @router.post("/verify")
 def verify_chain(
-    current_user: User = Depends(require_role(RoleName.ADMIN)),
+    current_user: User = Depends(require_role(RoleName.ADMIN, RoleName.AUDITOR)),
     db: Session = Depends(get_db),
 ) -> dict:
     """Verify the integrity of the entire audit hash chain.
@@ -196,7 +196,7 @@ def verify_chain(
 @router.get("/logs/{log_id}/verify")
 def verify_single_entry(
     log_id: uuid.UUID,
-    current_user: User = Depends(require_role(RoleName.ADMIN)),
+    current_user: User = Depends(require_role(RoleName.ADMIN, RoleName.AUDITOR)),
     db: Session = Depends(get_db),
 ) -> dict:
     """Verify a single audit log entry's hash."""
@@ -220,7 +220,7 @@ def verify_single_entry(
 
 @router.get("/actions")
 def list_actions(
-    current_user: User = Depends(require_role(RoleName.ADMIN)),
+    current_user: User = Depends(require_role(RoleName.ADMIN, RoleName.AUDITOR)),
     db: Session = Depends(get_db),
 ) -> dict:
     """List all unique action types in the audit log."""
@@ -235,7 +235,7 @@ def list_actions(
 def list_high_priority(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
-    current_user: User = Depends(require_role(RoleName.ADMIN)),
+    current_user: User = Depends(require_role(RoleName.ADMIN, RoleName.AUDITOR)),
     db: Session = Depends(get_db),
 ) -> dict:
     """List high priority audit logs (break-glass, tamper detection)."""
@@ -263,7 +263,7 @@ def list_high_priority(
 
 @router.post("/repair-chain")
 def repair_chain(
-    current_user: User = Depends(require_role(RoleName.ADMIN)),
+    current_user: User = Depends(require_role(RoleName.ADMIN, RoleName.AUDITOR)),
     db: Session = Depends(get_db),
 ) -> dict:
     """Repair the audit hash chain.
@@ -299,7 +299,7 @@ def repair_chain(
 
 @router.get("/categories")
 def list_categories(
-    current_user: User = Depends(require_role(RoleName.ADMIN)),
+    current_user: User = Depends(require_role(RoleName.ADMIN, RoleName.AUDITOR)),
 ) -> dict:
     """List all available audit event categories."""
     from app.models.audit_log import AuditCategory
@@ -313,7 +313,7 @@ def list_categories(
 
 @router.get("/priorities")
 def list_priorities(
-    current_user: User = Depends(require_role(RoleName.ADMIN)),
+    current_user: User = Depends(require_role(RoleName.ADMIN, RoleName.AUDITOR)),
 ) -> dict:
     """List all available audit event priorities."""
     from app.models.audit_log import AuditPriority

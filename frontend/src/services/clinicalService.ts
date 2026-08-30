@@ -55,13 +55,30 @@ export async function listDocuments(patientId: string): Promise<MedicalDocument[
   return data.data;
 }
 
+export type UploadPurpose = "lab_results" | "prescriptions" | "imaging" | "consent_forms" | "general";
+export type UploadedForType = "patient" | "department" | "external_provider" | "internal_reference";
+
+export interface UploadDocumentOptions {
+  patientId: string;
+  file: File;
+  uploadPurpose?: UploadPurpose;
+  uploadedFor?: string;
+  uploadedForType?: UploadedForType;
+}
+
 export async function uploadDocument(
   patientId: string,
   file: File,
+  uploadPurpose?: UploadPurpose,
+  uploadedFor?: string,
+  uploadedForType?: UploadedForType
 ): Promise<MedicalDocument> {
   const form = new FormData();
   form.append("patient_id", patientId);
   form.append("file", file);
+  if (uploadPurpose) form.append("upload_purpose", uploadPurpose);
+  if (uploadedFor) form.append("uploaded_for", uploadedFor);
+  if (uploadedForType) form.append("uploaded_for_type", uploadedForType);
   const { data } = await apiClient.post<SuccessResponse<MedicalDocument>>("/documents", form, {
     headers: { "Content-Type": "multipart/form-data" },
   });

@@ -26,8 +26,10 @@ export function DashboardPage() {
           navigate("/admin/dashboard", { replace: true });
           break;
         case "Doctor":
-        case "Nurse":
           navigate("/doctor/dashboard", { replace: true });
+          break;
+        case "Nurse":
+          navigate("/nurse/dashboard", { replace: true });
           break;
         case "Patient":
           navigate("/patient/dashboard", { replace: true });

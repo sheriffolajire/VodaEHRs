@@ -2,6 +2,16 @@ import React, { useState } from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useIdleTimeout } from "@/hooks/useIdleTimeout";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle } from "lucide-react";
 import type { RoleName } from "@/types/auth";
 
 interface ProtectedRouteProps {
@@ -24,21 +34,24 @@ function SessionExpiryWarning({
   onStayActive: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-sm rounded-lg border bg-card p-6 shadow-lg">
-        <h3 className="mb-2 text-lg font-semibold text-amber-600">Session Expiring Soon</h3>
-        <p className="mb-4 text-sm text-muted-foreground">
-          Your session will expire in <strong>{remainingSeconds}</strong> seconds due to inactivity.
-        </p>
-        <button
-          type="button"
-          onClick={onStayActive}
-          className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-        >
-          Stay Active
-        </button>
-      </div>
-    </div>
+    <Dialog open={true} onOpenChange={() => {}}>
+      <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-amber-600">
+            <AlertTriangle className="h-5 w-5" />
+            Session Expiring Soon
+          </DialogTitle>
+          <DialogDescription>
+            Your session will expire in <strong>{remainingSeconds}</strong> seconds due to inactivity.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button onClick={onStayActive} className="w-full">
+            Stay Active
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

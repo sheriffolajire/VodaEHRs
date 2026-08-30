@@ -22,13 +22,14 @@ def get_active_for_clinician_patient(
 ) -> EmergencyAccess | None:
     """Get active emergency access for a clinician/patient pair.
     
-    Active = not revoked AND granted_at <= now < expires_at
+    Active = approved AND not revoked AND granted_at <= now < expires_at
     """
     now = datetime.utcnow()
     
     return db.query(EmergencyAccess).filter(
         EmergencyAccess.clinician_id == clinician_id,
         EmergencyAccess.patient_id == patient_id,
+        EmergencyAccess.status == "approved",  # Must be approved by admin
         EmergencyAccess.revoked_at.is_(None),
         EmergencyAccess.granted_at <= now,
         EmergencyAccess.expires_at > now

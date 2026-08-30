@@ -5,6 +5,7 @@
  * and recent audit events for administrators.
  */
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { 
   Users, 
@@ -24,7 +25,10 @@ import { DashboardSkeleton } from "@/components/DashboardSkeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { toast } from "sonner";
 import { 
   BarChart, 
   Bar, 
@@ -46,11 +50,31 @@ export function AdminDashboardPage() {
     queryFn: getAdminStats,
   });
 
+  // Date range state for compliance report
+  const today = new Date().toISOString().split('T')[0];
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  
+  const [fromDate, setFromDate] = useState(thirtyDaysAgo);
+  const [toDate, setToDate] = useState(today);
+
   const handleDownloadComplianceReport = async () => {
     try {
-      await downloadComplianceReport({ days: 30 });
+      const from = new Date(fromDate);
+      const to = new Date(toDate);
+      
+      if (from > to) {
+        toast.error("From date must be before To date");
+        return;
+      }
+      
+      await downloadComplianceReport({ 
+        fromDate: from,
+        toDate: to
+      });
+      toast.success("Compliance report downloaded successfully");
     } catch (err) {
       console.error("Failed to download report:", err);
+      toast.error("Failed to download compliance report");
     }
   };
 
@@ -202,13 +226,33 @@ export function AdminDashboardPage() {
       {/* Report Actions */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium">Reports</CardTitle>
+          <CardTitle className="text-sm font-medium">Compliance Report</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="admin-from-date" className="text-xs">From Date</Label>
+              <Input
+                id="admin-from-date"
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="w-40"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="admin-to-date" className="text-xs">To Date</Label>
+              <Input
+                id="admin-to-date"
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="w-40"
+              />
+            </div>
             <Button onClick={handleDownloadComplianceReport}>
               <Download className="h-4 w-4 mr-2" />
-              Download Compliance Report
+              Download CSV
             </Button>
           </div>
         </CardContent>

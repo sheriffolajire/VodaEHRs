@@ -41,6 +41,7 @@ export interface DoctorStats {
 }
 
 export interface PatientStats {
+  patient_id: string;
   record_count_by_type: Record<string, number>;
   upcoming_appointments: number;
   active_consents: number;

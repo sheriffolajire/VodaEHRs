@@ -32,16 +32,16 @@ import {
 } from "recharts";
 
 export function PatientDashboardPage() {
-  const { user } = useAuth();
+  useAuth();
   const { data: stats, isLoading, error } = useQuery({
     queryKey: ["patient-stats"],
     queryFn: getPatientStats,
   });
 
   const handleDownloadSummary = async () => {
-    if (!user?.id) return;
+    if (!stats?.patient_id) return;
     try {
-      await downloadPatientSummaryReport(user.id);
+      await downloadPatientSummaryReport(stats.patient_id);
     } catch (err) {
       console.error("Failed to download report:", err);
     }

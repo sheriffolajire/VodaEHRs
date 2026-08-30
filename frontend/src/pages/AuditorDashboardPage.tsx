@@ -5,6 +5,7 @@
  * and compliance metrics for auditors.
  */
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { 
   Shield, 
@@ -15,7 +16,8 @@ import {
   Clock,
   Link as LinkIcon,
   History,
-  Download
+  Download,
+  Calendar
 } from "lucide-react";
 import { getAuditorStats, type AuditorStats } from "@/services/statsService";
 import { downloadComplianceReport } from "@/services/reportService";
@@ -23,6 +25,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 import { 
   BarChart, 
   Bar, 
@@ -48,11 +53,31 @@ export function AuditorDashboardPage() {
     queryFn: getAuditorStats,
   });
 
+  // Date range state for compliance report
+  const today = new Date().toISOString().split('T')[0];
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  
+  const [fromDate, setFromDate] = useState(thirtyDaysAgo);
+  const [toDate, setToDate] = useState(today);
+
   const handleDownloadComplianceReport = async () => {
     try {
-      await downloadComplianceReport({ days: 30 });
+      const from = new Date(fromDate);
+      const to = new Date(toDate);
+      
+      if (from > to) {
+        toast.error("From date must be before To date");
+        return;
+      }
+      
+      await downloadComplianceReport({ 
+        fromDate: from,
+        toDate: to
+      });
+      toast.success("Compliance report downloaded successfully");
     } catch (err) {
       console.error("Failed to download report:", err);
+      toast.error("Failed to download compliance report");
     }
   };
 
@@ -69,8 +94,8 @@ export function AuditorDashboardPage() {
     return (
       <div className="space-y-6">
         <h2 className="text-2xl font-semibold">Auditor Dashboard</h2>
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-          <p className="text-sm text-red-600">Failed to load audit statistics</p>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/30">
+          <p className="text-sm text-red-600 dark:text-red-400">Failed to load audit statistics</p>
         </div>
       </div>
     );
@@ -104,14 +129,14 @@ export function AuditorDashboardPage() {
       </div>
 
       {/* Chain Integrity Status */}
-      <Card className={data?.chain_ok ? "border-green-200 bg-green-50/50" : "border-red-200 bg-red-50/50"}>
+      <Card className={data?.chain_ok ? "border-green-200 bg-green-50/50 dark:border-green-900 dark:bg-green-950/30" : "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/30"}>
         <CardContent className="pt-6">
           <div className="flex items-start gap-4">
-            <div className={`flex h-12 w-12 items-center justify-center rounded-full ${data?.chain_ok ? "bg-green-100" : "bg-red-100"}`}>
+            <div className={`flex h-12 w-12 items-center justify-center rounded-full ${data?.chain_ok ? "bg-green-100 dark:bg-green-900/50" : "bg-red-100 dark:bg-red-900/50"}`}>
               {data?.chain_ok ? (
-                <CheckCircle className="h-6 w-6 text-green-600" />
+                <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
               ) : (
-                <AlertTriangle className="h-6 w-6 text-red-600" />
+                <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-400" />
               )}
             </div>
             <div className="flex-1">
@@ -270,17 +295,47 @@ export function AuditorDashboardPage() {
           <CardTitle className="text-sm font-medium">Audit Actions</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-3 mb-4">
             <Button asChild>
               <Link to="/audit">View Full Audit Log</Link>
             </Button>
             <Button variant="outline" asChild>
               <Link to="/emergency-access">Review Emergency Access</Link>
             </Button>
-            <Button variant="outline" onClick={handleDownloadComplianceReport}>
-              <Download className="h-4 w-4 mr-2" />
-              Download Compliance Report
-            </Button>
+          </div>
+          
+          {/* Compliance Report Download with Date Range */}
+          <div className="border rounded-lg p-4 bg-muted/50">
+            <div className="flex items-center gap-2 mb-3">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Download Compliance Report</span>
+            </div>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="from-date" className="text-xs">From Date</Label>
+                <Input
+                  id="from-date"
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="w-40"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="to-date" className="text-xs">To Date</Label>
+                <Input
+                  id="to-date"
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="w-40"
+                />
+              </div>
+              <Button variant="outline" onClick={handleDownloadComplianceReport}>
+                <Download className="h-4 w-4 mr-2" />
+                Download CSV
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -321,9 +376,9 @@ function StatCard({
 }) {
   const variantStyles = {
     default: "",
-    success: "border-green-200 bg-green-50",
-    warning: "border-yellow-200 bg-yellow-50",
-    error: "border-red-200 bg-red-50",
+    success: "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30",
+    warning: "border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950/30",
+    error: "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30",
   };
 
   const content = (
@@ -334,9 +389,9 @@ function StatCard({
       </CardHeader>
       <CardContent>
         <div className={`text-2xl font-bold ${
-          variant === "success" ? "text-green-600" :
-          variant === "warning" ? "text-yellow-600" :
-          variant === "error" ? "text-red-600" : ""
+          variant === "success" ? "text-green-600 dark:text-green-400" :
+          variant === "warning" ? "text-yellow-600 dark:text-yellow-400" :
+          variant === "error" ? "text-red-600 dark:text-red-400" : ""
         }`}>
           {value}
         </div>

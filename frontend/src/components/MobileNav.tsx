@@ -25,7 +25,8 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { to: "/admin/dashboard", label: "Admin Dashboard", icon: LayoutDashboard, roles: ["Admin"] },
-  { to: "/doctor/dashboard", label: "Doctor Dashboard", icon: LayoutDashboard, roles: ["Doctor", "Nurse"] },
+  { to: "/doctor/dashboard", label: "Doctor Dashboard", icon: LayoutDashboard, roles: ["Doctor"] },
+  { to: "/nurse/dashboard", label: "Nurse Dashboard", icon: LayoutDashboard, roles: ["Nurse"] },
   { to: "/patient/dashboard", label: "My Dashboard", icon: LayoutDashboard, roles: ["Patient"] },
   { to: "/auditor/dashboard", label: "Auditor Dashboard", icon: LayoutDashboard, roles: ["Auditor"] },
   { to: "/patients", label: "Patients", icon: UserRound, roles: ["Admin", "Receptionist", "Doctor", "Nurse"] },

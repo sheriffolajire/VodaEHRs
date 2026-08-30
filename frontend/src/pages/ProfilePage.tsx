@@ -36,9 +36,8 @@ export function ProfilePage() {
     },
   });
 
-  const onSubmit = async (data: ProfileForm) => {
+  const onSubmit = async (_data: ProfileForm) => {
     // TODO: Implement profile update API call
-    console.log("Profile update:", data);
     setSuccessMessage("Profile updated successfully!");
     setIsEditing(false);
     setTimeout(() => setSuccessMessage(null), 3000);

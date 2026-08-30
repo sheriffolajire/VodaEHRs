@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.audit.logger import AuditEvent, record_event
 from app.core.config import settings
 from app.crypto import keys, encryption
-from app.models.medical_document import MedicalDocument
+from app.models.medical_document import MedicalDocument, UploadPurpose, UploadedForType
 from app.models.role import RoleName
 from app.models.user import User
 from app.repositories import document_repository
@@ -40,8 +40,28 @@ def upload_document(
     size_bytes: int,
     data: BinaryIO,
     record_id: uuid.UUID | None = None,
+    upload_purpose: UploadPurpose = UploadPurpose.GENERAL,
+    uploaded_for: str | None = None,
+    uploaded_for_type: UploadedForType | None = None,
 ) -> MedicalDocument:
-    """Validate, encrypt, store to MinIO, then persist metadata for a patient's file."""
+    """Validate, encrypt, store to MinIO, then persist metadata for a patient's file.
+    
+    Args:
+        db: Database session
+        actor: User uploading the document
+        patient_id: Patient the document belongs to
+        filename: Original filename (for reference only, not used in storage key)
+        content_type: MIME type of the file
+        size_bytes: File size in bytes
+        data: File content as binary stream
+        record_id: Optional medical record to link
+        upload_purpose: Purpose/category of the upload
+        uploaded_for: Who/what the document was uploaded for
+        uploaded_for_type: Type of entity uploaded_for represents
+        
+    Returns:
+        MedicalDocument: The created document record
+    """
     authorization.ensure_patient_access(db, actor, patient_id)
     _validate_upload(content_type, size_bytes)
 
@@ -62,7 +82,27 @@ def upload_document(
     # Create encrypted content stream for storage
     encrypted_stream = io.BytesIO(encrypted_data)
 
-    storage_key = document_storage.build_storage_key(patient_id, filename)
+    # Fetch patient name for readable filename
+    from app.repositories import patient_repository
+    patient = patient_repository.get_by_id(db, patient_id)
+    if patient:
+        patient_name = f"{patient.first_name} {patient.last_name}".strip()
+    else:
+        patient_name = str(patient_id)
+
+    # Generate server-side storage key with readable naming convention
+    # Format: {patient_id}/{purpose}/{yyyy}/{mm}/{dd}/{patient-name}_{purpose}_{date}_{short-id}.{ext}
+    storage_key = document_storage.build_storage_key(
+        patient_id=patient_id,
+        patient_name=patient_name,
+        filename=filename,
+        purpose=upload_purpose,
+        document_id=None  # Will be updated after document creation
+    )
+    
+    # Extract the generated filename from the storage key
+    generated_filename = storage_key.split('/')[-1]
+    
     document_storage.put_object(storage_key, encrypted_stream, content_type)
 
     document = document_repository.add(
@@ -70,11 +110,14 @@ def upload_document(
         MedicalDocument(
             patient_id=patient_id,
             record_id=record_id,
-            filename=filename,
+            filename=generated_filename,  # Server-generated readable name
             content_type=content_type,
             size_bytes=size_bytes,
             storage_key=storage_key,
             uploaded_by=actor.id,
+            upload_purpose=upload_purpose,
+            uploaded_for=uploaded_for,
+            uploaded_for_type=uploaded_for_type,
             encrypted=True,
             nonce=nonce,
             auth_tag=auth_tag,
@@ -82,13 +125,20 @@ def upload_document(
             aes_key_hash=aes_key_hash,
         ),
     )
+    
+    # Update storage key with document ID for traceability
+    # This is optional - the key already has a UUID, but using the document ID
+    # makes it easier to trace back from storage to database
+    # Note: In production, you might want to regenerate and move the object
+    
     record_event(
         AuditEvent(
             action="document.upload",
             user_id=str(actor.id),
             patient_id=str(patient_id),
             status="success",
-            reason=str(document.id),
+            reason=f"Document ID: {document.id}, Purpose: {upload_purpose.value}, "
+                   f"For: {uploaded_for or 'N/A'}, Storage: {storage_key}",
         )
     )
     return document
@@ -104,16 +154,24 @@ def list_documents(
     
     Layer 3: Resource Access (ensure_patient_access)
     Layer 4: Consent (ensure_consent) - Documents require 'document' consent
+    
+    Access Rules:
+    - Admin: Full access to all documents
+    - Patient: Full access to own documents
+    - Doctor/Nurse (with consent): Full access to all documents
+    - Doctor/Nurse (without consent): Can see document metadata only (no download)
+    - Receptionist: NO access to documents (removed per security requirement)
     """
     # Layer 3: Resource Access
     authorization.ensure_patient_access(db, actor, patient_id)
     
+    # Receptionists should NOT have access to documents
+    if actor.role.name == RoleName.RECEPTIONIST:
+        raise PermissionError_("Receptionists do not have access to patient documents.")
+    
     # Layer 4: Consent Check
-    # Patients can always see their own documents (checked in ensure_consent)
-    # Uploaders (clinicians) can always see their own uploaded documents
-    # Others need explicit consent or emergency access
+    # Patients can always see their own documents
     if actor.role.name == RoleName.PATIENT:
-        # Patients have full access to their own documents via ensure_consent
         authorization.ensure_consent(
             db, actor, patient_id, 
             authorization.ResourceType.DOCUMENT,
@@ -121,19 +179,33 @@ def list_documents(
         )
         return document_repository.list_for_patient(db, patient_id)
     
-    if actor.role.name not in (RoleName.ADMIN, RoleName.RECEPTIONIST):
+    # Admin has full access
+    if actor.role.name == RoleName.ADMIN:
+        return document_repository.list_for_patient(db, patient_id)
+    
+    # Doctor/Nurse: Check consent
+    if actor.role.name in (RoleName.DOCTOR, RoleName.NURSE):
         try:
+            # Has consent - return all documents with full access
             authorization.ensure_consent(
                 db, actor, patient_id, 
                 authorization.ResourceType.DOCUMENT,
                 is_admin_override
             )
+            return document_repository.list_for_patient(db, patient_id)
         except PermissionError_:
-            # If no consent, only return documents uploaded by this clinician
+            # No consent - return documents with restricted flag
+            # The frontend should show these as "requires consent to view"
             all_docs = document_repository.list_for_patient(db, patient_id)
-            return [d for d in all_docs if d.uploaded_by == actor.id]
+            # Mark documents that the user didn't upload as requiring consent
+            for doc in all_docs:
+                if doc.uploaded_by != actor.id:
+                    # Add a flag to indicate consent required
+                    doc._requires_consent = True  # type: ignore
+            return all_docs
     
-    return document_repository.list_for_patient(db, patient_id)
+    # Default: no access
+    raise PermissionError_("Your role cannot access patient documents.")
 
 
 def get_document_for_download(
@@ -159,24 +231,34 @@ def get_document_for_download(
     # Uploaders can always access their own documents
     # Patients can always access their own documents (via ensure_consent)
     # Others need explicit consent or emergency access
+    has_consent = False
     if document.uploaded_by != actor.id:
         # Patients need consent check for documents they didn't upload
         # Clinicians need consent check for documents they didn't upload
-        authorization.ensure_consent(
-            db, actor, document.patient_id,
-            authorization.ResourceType.DOCUMENT,
-            is_admin_override
-        )
+        try:
+            authorization.ensure_consent(
+                db, actor, document.patient_id,
+                authorization.ResourceType.DOCUMENT,
+                is_admin_override
+            )
+            has_consent = True
+        except PermissionError_:
+            # No consent - check if they should still be allowed (for view-only)
+            pass
+    else:
+        # Uploader always has consent for their own documents
+        has_consent = True
     
     # Download permission:
     # - Document creator (uploader) can always download
     # - Patient can always download their own documents
     # - Admin with override can download
-    # - Others have view-only access to metadata
+    # - Clinicians with consent can download
     can_download = (
         document.uploaded_by == actor.id or  # Uploader
         actor.role.name == RoleName.PATIENT or  # Patient owns the document
-        is_admin_override  # Admin with emergency override
+        is_admin_override or  # Admin with emergency override
+        has_consent  # Clinician with patient consent
     )
     
     if not can_download:

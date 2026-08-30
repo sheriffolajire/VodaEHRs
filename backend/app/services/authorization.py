@@ -12,12 +12,15 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from app.core.logging import get_logger
 from app.models.medical_record import RecordType
 from app.models.patient import Patient
 from app.models.role import RoleName
 from app.models.user import User
 from app.repositories import assignment_repository, consent_repository, emergency_access_repository, patient_repository
 from app.services.exceptions import NotFoundError, PermissionError_
+
+logger = get_logger("authorization")
 
 
 class ResourceType(str, enum.Enum):
@@ -116,10 +119,18 @@ def ensure_consent(
     
     # Patients always have access to their own records
     if clinician.role.name == RoleName.PATIENT:
-        # Check if accessing own record
+        # Check if accessing own record by email or name match
         patient = patient_repository.get_by_id(db, patient_id)
-        if patient and patient.email == clinician.email:
-            return True
+        if patient:
+            # Match by email (exact or if patient record email matches user email)
+            if patient.email == clinician.email:
+                return True
+            # Match by name (for cases where emails differ)
+            if (patient.first_name and patient.last_name and 
+                clinician.first_name and clinician.last_name and
+                patient.first_name.lower() == clinician.first_name.lower() and
+                patient.last_name.lower() == clinician.last_name.lower()):
+                return True
         raise PermissionError_("You may only access your own record.")
     
     # Admins can override but must be explicitly audited
@@ -132,6 +143,19 @@ def ensure_consent(
     from sqlalchemy import or_
     
     now = datetime.utcnow()
+    
+    logger.info(f"Checking consent for clinician={clinician.id}, patient={patient_id}, record_type={record_type_str}")
+    
+    # First, check if ANY consent exists for this patient/clinician
+    any_consent = db.query(Consent).filter(
+        Consent.patient_id == patient_id,
+        Consent.clinician_id == clinician.id
+    ).first()
+    
+    if any_consent:
+        logger.info(f"Found consent record: id={any_consent.id}, record_type={any_consent.record_type}, granted={any_consent.granted}, revoked_at={any_consent.revoked_at}, expires_at={any_consent.expires_at}")
+    else:
+        logger.info(f"No consent record found for clinician={clinician.id}, patient={patient_id}")
     
     active_consent = db.query(Consent).filter(
         Consent.patient_id == patient_id,
@@ -146,7 +170,10 @@ def ensure_consent(
     ).first()
     
     if active_consent:
+        logger.info(f"Active consent found: {active_consent.id}")
         return True
+    else:
+        logger.info(f"No active consent found for record_type={record_type_str}")
     
     # Check active break-glass (emergency access)
     has_emergency = emergency_access_repository.has_active_emergency_access(

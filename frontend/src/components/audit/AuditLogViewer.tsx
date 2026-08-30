@@ -1,13 +1,16 @@
-/** Audit Log Viewer Component for Phase 5.
+/** 
  *
  * Admins can view and verify tamper-evident audit logs.
  */
 import { useState, useEffect } from "react";
-import { ShieldCheck, AlertTriangle, Search, Filter, RefreshCw, CheckCircle, XCircle, Hash, Wrench, AlertCircle } from "lucide-react";
+import { ShieldCheck, AlertTriangle, Search, Filter, RefreshCw, CheckCircle, XCircle, Hash, Wrench, AlertCircle, Download } from "lucide-react";
 import { auditService, type AuditLog, type ChainStatus, type AuditCategory, type AuditPriority } from "@/services/auditService";
+import { downloadComplianceReport } from "@/services/reportService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Select,
@@ -92,6 +95,12 @@ export function AuditLogViewer() {
   const [filterPriority, setFilterPriority] = useState<string>("");
   const [filterCategory, setFilterCategory] = useState<string>("");
   const [verifyResult, setVerifyResult] = useState<{ is_valid: boolean; message: string; broken_at?: number | null } | null>(null);
+  
+  // Date range state for compliance report
+  const today = new Date().toISOString().split('T')[0];
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const [reportFromDate, setReportFromDate] = useState(thirtyDaysAgo);
+  const [reportToDate, setReportToDate] = useState(today);
 
   useEffect(() => {
     fetchData();
@@ -178,6 +187,26 @@ export function AuditLogViewer() {
       setError(err instanceof Error ? err.message : "Failed to verify chain");
     } finally {
       setIsVerifying(false);
+    }
+  };
+
+  const handleDownloadComplianceReport = async () => {
+    try {
+      const from = new Date(reportFromDate);
+      const to = new Date(reportToDate);
+      
+      if (from > to) {
+        toast.error("From date must be before To date");
+        return;
+      }
+      
+      await downloadComplianceReport({ 
+        fromDate: from,
+        toDate: to
+      });
+      toast.success("Compliance report downloaded successfully");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to download compliance report");
     }
   };
 
@@ -345,16 +374,16 @@ export function AuditLogViewer() {
                   </div>
                 )}
                 {chainStatus.expected_prev_hash && chainStatus.actual_prev_hash && (
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     <div className="text-xs">
                       <strong>Expected Previous Hash:</strong>
-                      <code className="block p-1 bg-red-950 rounded text-xs font-mono break-all">
+                      <code className="block p-2 bg-red-100 dark:bg-red-950 rounded text-xs font-mono break-all text-red-900 dark:text-red-100 border border-red-200 dark:border-red-800">
                         {chainStatus.expected_prev_hash}
                       </code>
                     </div>
                     <div className="text-xs">
                       <strong>Actual Previous Hash:</strong>
-                      <code className="block p-1 bg-red-950 rounded text-xs font-mono break-all">
+                      <code className="block p-2 bg-red-100 dark:bg-red-950 rounded text-xs font-mono break-all text-red-900 dark:text-red-100 border border-red-200 dark:border-red-800">
                         {chainStatus.actual_prev_hash}
                       </code>
                     </div>
@@ -433,6 +462,40 @@ export function AuditLogViewer() {
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh
             </Button>
+          </div>
+          
+          {/* Compliance Report Download with Date Range */}
+          <div className="mt-4 border rounded-lg p-4 bg-muted/50">
+            <div className="flex items-center gap-2 mb-3">
+              <Download className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Download Compliance Report</span>
+            </div>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="audit-from-date" className="text-xs">From Date</Label>
+                <Input
+                  id="audit-from-date"
+                  type="date"
+                  value={reportFromDate}
+                  onChange={(e) => setReportFromDate(e.target.value)}
+                  className="w-40"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="audit-to-date" className="text-xs">To Date</Label>
+                <Input
+                  id="audit-to-date"
+                  type="date"
+                  value={reportToDate}
+                  onChange={(e) => setReportToDate(e.target.value)}
+                  className="w-40"
+                />
+              </div>
+              <Button variant="secondary" onClick={handleDownloadComplianceReport}>
+                <Download className="h-4 w-4 mr-2" />
+                Download CSV
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

@@ -56,13 +56,19 @@ export interface MedicalDocument {
   id: string;
   patient_id: string;
   record_id: string | null;
-  filename: string;
+  filename: string;  // Server-generated readable filename (e.g., john-doe_lab-results_2025-01-15_abc12345.pdf)
   content_type: string;
   size_bytes: number;
   uploaded_at: string;
   uploaded_by: string;
   encrypted: boolean;
   aes_key_hash: string | null;
+  // Upload metadata
+  upload_purpose?: "lab_results" | "prescriptions" | "imaging" | "consent_forms" | "general";
+  uploaded_for?: string | null;
+  uploaded_for_type?: "patient" | "department" | "external_provider" | "internal_reference" | null;
+  // Consent requirement flag
+  requires_consent?: boolean;
 }
 
 export interface Appointment {

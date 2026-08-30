@@ -10,6 +10,7 @@ from app.models.consent import Consent, ConsentStatus
 from app.models.emergency_access import EmergencyAccess
 from app.models.medical_document import MedicalDocument
 from app.models.medical_record import MedicalRecord, RecordType
+from app.models.nursing_task import NursingTask, TaskStatus, TaskPriority, TaskType
 from app.models.password_reset_token import PasswordResetToken
 from app.models.patient import Gender, Patient
 from app.models.patient_assignment import PatientAssignment
@@ -31,6 +32,7 @@ __all__ = [
     "Gender",
     "MedicalDocument",
     "MedicalRecord",
+    "NursingTask",
     "PasswordResetToken",
     "Patient",
     "PatientAssignment",
@@ -39,6 +41,9 @@ __all__ = [
     "RefreshToken",
     "Role",
     "RoleName",
+    "TaskPriority",
+    "TaskStatus",
+    "TaskType",
     "User",
     "UserStatus",
     "UserKey",

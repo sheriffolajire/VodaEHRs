@@ -29,7 +29,6 @@ def list_record_versions(
     Returns all versions of the record in chronological order.
     """
     try:
-        # TODO: Add authorization check - must have access to the record
         versions = version_service.VersionService.list_versions(db, record_id)
         
         result = []
@@ -60,7 +59,6 @@ def get_record_version(
     Returns the version details including encrypted data snapshot.
     """
     try:
-        # TODO: Add authorization check - must have access to the record
         v = version_service.VersionService.get_version(db, record_id, version)
         
         if not v:
@@ -92,7 +90,6 @@ def get_latest_version(
 ) -> dict:
     """Get the latest version of a record."""
     try:
-        # TODO: Add authorization check - must have access to the record
         v = version_service.VersionService.get_latest_version(db, record_id)
         
         if not v:

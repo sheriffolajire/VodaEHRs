@@ -6,14 +6,53 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Literal
 
+from sqlalchemy import select, and_, func
 from sqlalchemy.orm import Session
 
 from app.models.consent import Consent
 from app.models.medical_record import RecordType
+from app.models.patient import Patient
 from app.models.user import User
-from app.repositories import consent_repository
+from app.repositories import consent_repository, patient_repository
 from app.services.authorization import ResourceType
 from app.services.exceptions import NotFoundError, PermissionError_
+
+
+def _get_patient_record_for_user(db: Session, user: User) -> Patient:
+    """Look up the Patient record for a User.
+    
+    First tries to match by email, then falls back to name matching
+    for cases where patient email differs from user email.
+    
+    Args:
+        db: Database session
+        user: The user to look up
+        
+    Returns:
+        The Patient record
+        
+    Raises:
+        NotFoundError: If no patient record is found
+    """
+    # First try to find by exact email match
+    patient_record = None
+    if user.email:
+        patient_record = patient_repository.get_by_email(db, user.email)
+    
+    # If not found, try to find by name (for cases where emails differ)
+    if patient_record is None and user.first_name and user.last_name:
+        statement = select(Patient).where(
+            and_(
+                func.lower(Patient.first_name) == user.first_name.lower(),
+                func.lower(Patient.last_name) == user.last_name.lower()
+            )
+        )
+        patient_record = db.scalar(statement)
+    
+    if not patient_record:
+        raise NotFoundError(f"Patient record not found for user {user.email}")
+    
+    return patient_record
 
 
 class ConsentService:
@@ -43,15 +82,12 @@ class ConsentService:
             PermissionError_: If the user is not a patient
         """
         from app.models.role import RoleName
-        from app.repositories import patient_repository
         
         if patient.role.name != RoleName.PATIENT:
             raise PermissionError_("Only patients can grant consent.")
         
         # Look up the patient record for this user
-        patient_record = patient_repository.get_by_email(db, patient.email)
-        if not patient_record:
-            raise NotFoundError(f"Patient record not found for user {patient.email}")
+        patient_record = _get_patient_record_for_user(db, patient)
         
         # Check if active consent already exists
         existing = consent_repository.get_active_consent(
@@ -98,15 +134,12 @@ class ConsentService:
             PermissionError_: If patient doesn't own this consent
         """
         from app.models.role import RoleName
-        from app.repositories import patient_repository
         
         if patient.role.name != RoleName.PATIENT:
             raise PermissionError_("Only patients can revoke consent.")
         
         # Look up the patient record for this user
-        patient_record = patient_repository.get_by_email(db, patient.email)
-        if not patient_record:
-            raise NotFoundError(f"Patient record not found for user {patient.email}")
+        patient_record = _get_patient_record_for_user(db, patient)
         
         consent = consent_repository.revoke(db, consent_id, patient_record.id)
         
@@ -130,15 +163,12 @@ class ConsentService:
             List of consents (active and inactive)
         """
         from app.models.role import RoleName
-        from app.repositories import patient_repository
         
         if patient.role.name != RoleName.PATIENT:
             raise PermissionError_("Only patients can view their consents.")
         
         # Look up the patient record for this user
-        patient_record = patient_repository.get_by_email(db, patient.email)
-        if not patient_record:
-            raise NotFoundError(f"Patient record not found for user {patient.email}")
+        patient_record = _get_patient_record_for_user(db, patient)
         
         return consent_repository.list_for_patient(db, patient_record.id)
     
@@ -157,15 +187,12 @@ class ConsentService:
             List of active consents
         """
         from app.models.role import RoleName
-        from app.repositories import patient_repository
         
         if patient.role.name != RoleName.PATIENT:
             raise PermissionError_("Only patients can view their consents.")
         
         # Look up the patient record for this user
-        patient_record = patient_repository.get_by_email(db, patient.email)
-        if not patient_record:
-            raise NotFoundError(f"Patient record not found for user {patient.email}")
+        patient_record = _get_patient_record_for_user(db, patient)
         
         return consent_repository.list_active_for_patient(db, patient_record.id)
     

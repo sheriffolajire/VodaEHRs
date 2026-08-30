@@ -428,6 +428,23 @@ function RecordsTab({
   );
 }
 
+import type { UploadPurpose, UploadedForType } from "@/services/clinicalService";
+
+const PURPOSE_OPTIONS: { value: UploadPurpose; label: string }[] = [
+  { value: "general", label: "General" },
+  { value: "lab_results", label: "Lab Results" },
+  { value: "prescriptions", label: "Prescriptions" },
+  { value: "imaging", label: "Imaging" },
+  { value: "consent_forms", label: "Consent Forms" },
+];
+
+const UPLOADED_FOR_TYPE_OPTIONS: { value: UploadedForType; label: string }[] = [
+  { value: "patient", label: "Patient" },
+  { value: "department", label: "Department" },
+  { value: "external_provider", label: "External Provider" },
+  { value: "internal_reference", label: "Internal Reference" },
+];
+
 function DocumentsTab({ 
   patientId, 
   canUpload, 
@@ -445,6 +462,12 @@ function DocumentsTab({
   const [overrideDoc, setOverrideDoc] = useState<{id: string, filename: string} | null>(null);
   const [overrideReason, setOverrideReason] = useState("");
   const [overrideError, setOverrideError] = useState<string | null>(null);
+  
+  // Upload form state
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadPurpose, setUploadPurpose] = useState<UploadPurpose>("general");
+  const [uploadedFor, setUploadedFor] = useState("");
+  const [uploadedForType, setUploadedForType] = useState<UploadedForType | undefined>(undefined);
 
   const documentsQuery = useQuery({
     queryKey: ["documents", patientId],
@@ -452,41 +475,152 @@ function DocumentsTab({
   });
   
   // Check if user can download a specific document
-  const canDownload = (docUploadedBy: string): boolean => {
-    // Document creator (uploader) can download
-    // Patient can download their own documents
-    // Admin with override can download
+  const canDownload = (docUploadedBy: string, requiresConsent?: boolean): boolean => {
     const isUploader = currentUserId === docUploadedBy;
     const isPatient = currentUserRole === "Patient";
-    return isUploader || isPatient;
+    // Admin can always download
+    const isAdmin = currentUserRole === "Admin";
+    if (isAdmin) return true;
+    // Patient can always download their own documents
+    if (isPatient) return true;
+    // Uploader can always download their own documents
+    if (isUploader) return true;
+    // If consent is NOT required (they have consent), they can download
+    if (!requiresConsent) return true;
+    // Otherwise, they need consent
+    return false;
   };
   
-  // Check if user is admin (can use override)
   const isAdmin = currentUserRole === "Admin";
 
   const uploadMutation = useMutation({
-    mutationFn: (file: File) => uploadDocument(patientId, file),
+    mutationFn: () => {
+      if (!selectedFile) throw new Error("No file selected");
+      return uploadDocument(
+        patientId, 
+        selectedFile, 
+        uploadPurpose, 
+        uploadedFor || undefined, 
+        uploadedForType
+      );
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents", patientId] });
       setError(null);
+      setSelectedFile(null);
+      setUploadPurpose("general");
+      setUploadedFor("");
+      setUploadedForType(undefined);
     },
     onError: (err) => setError(err instanceof Error ? err.message : "Upload failed"),
   });
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) setSelectedFile(file);
+  };
+
+  const handleUpload = () => {
+    if (!selectedFile) {
+      setError("Please select a file");
+      return;
+    }
+    uploadMutation.mutate();
+  };
+
+  // Format purpose for display
+  const formatPurpose = (purpose?: string): string => {
+    if (!purpose) return "General";
+    return purpose.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+  };
 
   return (
     <div className="space-y-4">
       {canUpload && (
         <div className="rounded-lg border bg-card p-6">
-          <h3 className="mb-3 text-sm font-medium">Upload document</h3>
-          <input
-            type="file"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) uploadMutation.mutate(file);
-            }}
-            className="text-sm"
-          />
-          {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
+          <h3 className="mb-4 text-sm font-medium">Upload Document</h3>
+          <div className="space-y-4">
+            {/* File Selection */}
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">
+                File
+              </label>
+              <input
+                type="file"
+                onChange={handleFileChange}
+                className="text-sm w-full"
+              />
+              {selectedFile && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                </p>
+              )}
+            </div>
+
+            {/* Purpose Selection */}
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">
+                Purpose
+              </label>
+              <select
+                value={uploadPurpose}
+                onChange={(e) => setUploadPurpose(e.target.value as UploadPurpose)}
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              >
+                {PURPOSE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Uploaded For */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Uploaded For (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={uploadedFor}
+                  onChange={(e) => setUploadedFor(e.target.value)}
+                  placeholder="e.g., Dr. Smith, Cardiology Dept"
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  maxLength={255}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Type (Optional)
+                </label>
+                <select
+                  value={uploadedForType || ""}
+                  onChange={(e) => setUploadedForType(e.target.value as UploadedForType || undefined)}
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">-- Select --</option>
+                  {UPLOADED_FOR_TYPE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Upload Button */}
+            <button
+              type="button"
+              onClick={handleUpload}
+              disabled={uploadMutation.isPending || !selectedFile}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {uploadMutation.isPending ? "Uploading..." : "Upload Document"}
+            </button>
+            
+            {error && <p className="text-xs text-red-500">{error}</p>}
+          </div>
         </div>
       )}
 
@@ -499,64 +633,101 @@ function DocumentsTab({
           {documentsQuery.data?.map((doc) => (
             <li
               key={doc.id}
-              className="flex items-center justify-between rounded-md border p-3 text-sm"
+              className="flex flex-col rounded-md border p-3 text-sm"
             >
-              <span className="flex items-center gap-2">
-                {doc.filename}
-                <span className="text-muted-foreground">
-                  {(doc.size_bytes / 1024).toFixed(1)} KB
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium">{doc.filename}</span>
+                  <span className="text-muted-foreground">
+                    {(doc.size_bytes / 1024).toFixed(1)} KB
+                  </span>
+                  {/* Purpose Badge */}
+                  {doc.upload_purpose && doc.upload_purpose !== "general" && (
+                    <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-100">
+                      {formatPurpose(doc.upload_purpose)}
+                    </span>
+                  )}
+                  {doc.encrypted ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-100">
+                      <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                      </svg>
+                      Encrypted
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100">
+                      <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                      Unencrypted
+                    </span>
+                  )}
+                  {/* Consent Required Badge */}
+                  {doc.requires_consent && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-100">
+                      <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                      </svg>
+                      Consent Required
+                    </span>
+                  )}
                 </span>
-                {doc.encrypted ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-100">
-                    <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                    </svg>
-                    Encrypted
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100">
-                    <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                    Unencrypted
-                  </span>
-                )}
-                {doc.aes_key_hash && (
-                  <span className="text-xs text-muted-foreground" title="Integrity hash">
-                    Hash: {doc.aes_key_hash.substring(0, 8)}...
-                  </span>
-                )}
-              </span>
-              {canDownload(doc.uploaded_by) ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDownloadError(null);
-                    downloadDocument(doc.id, doc.filename).catch((err) => {
-                      setDownloadError(err instanceof Error ? err.message : "Download failed");
-                    });
-                  }}
-                  className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
-                >
-                  Download
-                </button>
-              ) : isAdmin ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOverrideDoc({id: doc.id, filename: doc.filename});
-                    setOverrideReason("");
-                    setOverrideError(null);
-                  }}
-                  className="rounded-md border border-amber-500 bg-amber-50 px-2 py-1 text-xs text-amber-700 hover:bg-amber-100 dark:bg-amber-900 dark:text-amber-100"
-                  title="Admin override - requires reason"
-                >
-                  Override
-                </button>
-              ) : (
-                <span className="text-xs text-muted-foreground italic" title="Only the document creator can download">
-                  View only
-                </span>
+                <div className="flex items-center gap-2">
+                  {canDownload(doc.uploaded_by, doc.requires_consent) ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDownloadError(null);
+                        downloadDocument(doc.id, doc.filename).catch((err) => {
+                          setDownloadError(err instanceof Error ? err.message : "Download failed");
+                        });
+                      }}
+                      className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                    >
+                      Download
+                    </button>
+                  ) : isAdmin ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOverrideDoc({id: doc.id, filename: doc.filename});
+                        setOverrideReason("");
+                        setOverrideError(null);
+                      }}
+                      className="rounded-md border border-amber-500 bg-amber-50 px-2 py-1 text-xs text-amber-700 hover:bg-amber-100 dark:bg-amber-900 dark:text-amber-100"
+                      title="Admin override - requires reason"
+                    >
+                      Override
+                    </button>
+                  ) : doc.requires_consent ? (
+                    <span className="text-xs text-amber-600 italic" title="Patient consent required to download this document">
+                      Consent required
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground italic" title="Only the document creator can download">
+                      View only
+                    </span>
+                  )}
+                </div>
+              </div>
+              
+              {/* Document Metadata Row */}
+              {(doc.uploaded_for || doc.upload_purpose) && (
+                <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                  {doc.upload_purpose && doc.upload_purpose !== "general" && (
+                    <span className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-800">
+                      Purpose: {formatPurpose(doc.upload_purpose)}
+                    </span>
+                  )}
+                  {doc.uploaded_for && (
+                    <span className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-800">
+                      For: {doc.uploaded_for}
+                      {doc.uploaded_for_type && (
+                        <span className="ml-1 text-slate-500">({doc.uploaded_for_type.replace(/_/g, " ")})</span>
+                      )}
+                    </span>
+                  )}
+                </div>
               )}
             </li>
           ))}

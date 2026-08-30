@@ -1,15 +1,14 @@
 """
-Report Service - Phase 6
 
-Provides PDF report generation for patient summaries and compliance reports.
-Uses a simple HTML-based approach that can be converted to PDF by the client
-or a headless browser if needed.
+Provides CSV report generation for patient summaries and compliance reports.
 """
 
+import csv
 import uuid
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Optional
-from io import BytesIO
+from io import BytesIO, StringIO
 
 from sqlalchemy.orm import Session
 
@@ -18,6 +17,21 @@ from app.repositories import record_repository
 from app.repositories import appointment_repository
 from app.repositories import audit_log_repository
 from app.repositories import user_repository
+
+
+@dataclass
+class ReportResult:
+    """Result of report generation containing buffer and format info."""
+    buffer: BytesIO
+    content_type: str
+    extension: str
+
+
+def _make_timezone_aware(dt: datetime) -> datetime:
+    """Convert a naive datetime to UTC timezone-aware."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 class ReportService:
@@ -29,24 +43,27 @@ class ReportService:
     def generate_patient_summary_pdf(
         self,
         patient_id: str,
-        current_user_id: str
-    ) -> BytesIO:
+        current_user_id: str,
+        from_date: Optional[datetime] = None,
+        to_date: Optional[datetime] = None
+    ) -> ReportResult:
         """
-        Generate a comprehensive patient summary PDF.
+        Generate a comprehensive patient summary CSV report.
         
         Includes:
         - Patient demographics
         - Medical history summary
-        - Recent health records
+        - Recent health records (filtered by date range if provided)
         - Upcoming appointments
-        - Document inventory
         
         Args:
             patient_id: UUID of the patient
             current_user_id: UUID of the user generating the report
+            from_date: Optional start date for records filter
+            to_date: Optional end date for records filter
             
         Returns:
-            BytesIO containing the PDF data
+            ReportResult containing the buffer and content type info
         """
         import uuid
         
@@ -55,43 +72,75 @@ class ReportService:
         if not patient:
             raise ValueError(f"Patient {patient_id} not found")
         
-        # Fetch related data
-        records = record_repository.list_for_patient(self.db, uuid.UUID(patient_id))
+        # Fetch current user to check role
+        current_user = user_repository.get_by_id(self.db, uuid.UUID(current_user_id))
+        if not current_user:
+            raise ValueError(f"User {current_user_id} not found")
+        
+        # Patients can only download their own summary
+        # Check if the patient's email matches the user's email
+        # or if the patient's name matches the user's name
+        if current_user.role == "Patient":
+            patient_belongs_to_user = False
+            
+            # Check email match
+            if patient.email and current_user.email:
+                if patient.email.lower() == current_user.email.lower():
+                    patient_belongs_to_user = True
+            
+            # Check name match (fallback)
+            if not patient_belongs_to_user and patient.first_name and patient.last_name:
+                if (patient.first_name.lower() == current_user.first_name.lower() and
+                    patient.last_name.lower() == current_user.last_name.lower()):
+                    patient_belongs_to_user = True
+            
+            if not patient_belongs_to_user:
+                raise ValueError("Patients can only download their own health summary")
+        
+        # Fetch related data with optional date filtering
+        all_records = record_repository.list_for_patient(self.db, uuid.UUID(patient_id))
+        
+        # Filter records by date range if provided
+        records = all_records
+        if from_date or to_date:
+            records = []
+            for record in all_records:
+                record_date = _make_timezone_aware(record.created_at)
+                if from_date and to_date:
+                    if from_date <= record_date <= to_date:
+                        records.append(record)
+                elif from_date:
+                    if record_date >= from_date:
+                        records.append(record)
+                elif to_date:
+                    if record_date <= to_date:
+                        records.append(record)
+        
         appointments = appointment_repository.list_for_patient(self.db, uuid.UUID(patient_id))
         
-        # Calculate statistics
-        record_count = len(records)
-        upcoming_appointments = len(appointments)
-        
-        # Group records by type
-        records_by_type = {}
-        for record in records:
-            record_type = record.record_type.value if hasattr(record.record_type, 'value') else str(record.record_type)
-            records_by_type[record_type] = records_by_type.get(record_type, 0) + 1
-        
-        # Build HTML content
-        html_content = self._build_patient_summary_html(
+        # Build CSV content
+        csv_buffer = self._build_patient_summary_csv(
             patient=patient,
             records=records,
             appointments=appointments,
-            record_count=record_count,
-            upcoming_appointments=upcoming_appointments,
-            records_by_type=records_by_type,
             generated_by=current_user_id,
-            generated_at=datetime.utcnow()
+            generated_at=datetime.utcnow(),
+            from_date=from_date,
+            to_date=to_date
         )
         
-        # Return HTML as PDF (for now - in production would use headless browser)
-        # Using HTML with PDF mime type for browser print-to-PDF functionality
-        pdf_buffer = BytesIO(html_content.encode('utf-8'))
-        return pdf_buffer
+        return ReportResult(
+            buffer=csv_buffer,
+            content_type="text/csv",
+            extension="csv"
+        )
     
     def generate_compliance_report_pdf(
         self,
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
         current_user_id: Optional[str] = None
-    ) -> BytesIO:
+    ) -> ReportResult:
         """
         Generate a compliance audit report PDF.
         
@@ -108,19 +157,33 @@ class ReportService:
             current_user_id: UUID of the user generating the report
             
         Returns:
-            BytesIO containing the PDF data
+            ReportResult containing the buffer and content type info
         """
-        # Set default date range
+        # Set default date range (timezone-aware UTC)
         if to_date is None:
-            to_date = datetime.utcnow()
+            to_date = datetime.now(timezone.utc)
+        else:
+            to_date = _make_timezone_aware(to_date)
         if from_date is None:
             from_date = to_date - timedelta(days=30)
+        else:
+            from_date = _make_timezone_aware(from_date)
         
         # Fetch audit data - get all events and filter by date
         all_events = audit_log_repository.list_all(self.db, skip=0, limit=10000)
-        events = [e for e in all_events if from_date <= e.created_at <= to_date]
+        
+        # Debug logging
+        import logging
+        logging.getLogger(__name__).info(f"ReportService - from_date: {from_date}, to_date: {to_date}")
+        logging.getLogger(__name__).info(f"ReportService - Total events in DB: {len(all_events)}")
+        if all_events:
+            logging.getLogger(__name__).info(f"ReportService - First event date: {all_events[0].created_at}, Last event date: {all_events[-1].created_at}")
+        
+        events = [e for e in all_events if from_date <= _make_timezone_aware(e.created_at) <= to_date]
+        
+        logging.getLogger(__name__).info(f"ReportService - Filtered events: {len(events)}")
         chain_ok, _ = audit_log_repository.verify_chain(self.db)
-        break_glass_events = [e for e in events if "break_glass" in e.action.lower() or e.priority.value == "high"]
+        break_glass_events = [e for e in events if "break_glass" in e.action.lower() or (e.priority and e.priority.value == "high")]
         
         # Calculate statistics
         total_events = len(events)
@@ -163,8 +226,13 @@ class ReportService:
                     "count": count
                 })
         
-        # Build HTML content
-        html_content = self._build_compliance_report_html(
+        # Debug logging before CSV generation
+        logging.getLogger(__name__).info(f"ReportService - Before CSV: total_events={total_events}, chain_ok={chain_ok}, break_glass={len(break_glass_events)}, failed={failed_events}")
+        logging.getLogger(__name__).info(f"ReportService - Before CSV: events_by_action={events_by_action}, user_details={user_details}")
+        logging.getLogger(__name__).info(f"ReportService - Before CSV: events count={len(events)}")
+        
+        # Build CSV content
+        csv_buffer = self._build_compliance_report_csv(
             from_date=from_date,
             to_date=to_date,
             total_events=total_events,
@@ -173,13 +241,16 @@ class ReportService:
             events_by_action=events_by_action,
             failed_events=failed_events,
             top_users=user_details,
+            events=events,
             generated_by=current_user_id,
             generated_at=datetime.utcnow()
         )
         
-        # Return HTML as PDF (for now - in production would use headless browser)
-        pdf_buffer = BytesIO(html_content.encode('utf-8'))
-        return pdf_buffer
+        return ReportResult(
+            buffer=csv_buffer,
+            content_type="text/csv",
+            extension="csv"
+        )
     
     def _build_patient_summary_html(
         self,
@@ -196,8 +267,8 @@ class ReportService:
         
         # Patient info
         patient_name = f"{patient.first_name} {patient.last_name}"
-        patient_dob = patient.date_of_birth.strftime("%Y-%m-%d") if patient.date_of_birth else "N/A"
-        patient_age = self._calculate_age(patient.date_of_birth) if patient.date_of_birth else "N/A"
+        patient_dob = patient.dob.strftime("%Y-%m-%d") if patient.dob else "N/A"
+        patient_age = self._calculate_age(patient.dob) if patient.dob else "N/A"
         
         # Records table rows
         records_rows = ""
@@ -735,10 +806,177 @@ class ReportService:
         </body>
         </html>
         """
-    
-    def _calculate_age(self, birth_date) -> int:
-        """Calculate age from birth date."""
-        if not birth_date:
-            return 0
-        today = datetime.utcnow().date()
-        return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+
+    def _build_patient_summary_csv(
+        self,
+        patient,
+        records,
+        appointments,
+        generated_by: str,
+        generated_at: datetime,
+        from_date: Optional[datetime] = None,
+        to_date: Optional[datetime] = None
+    ) -> BytesIO:
+        """Build CSV content for patient summary report."""
+        output = StringIO()
+        writer = csv.writer(output)
+        
+        # Patient info section
+        writer.writerow(["PATIENT SUMMARY REPORT"])
+        writer.writerow(["Generated:", generated_at.strftime("%Y-%m-%d %H:%M UTC")])
+        writer.writerow(["Report ID:", f"PS-{generated_at.strftime('%Y%m%d')}-{str(patient.id)[:8]}"])
+        
+        # Add date range if provided
+        if from_date or to_date:
+            from_str = from_date.strftime("%Y-%m-%d") if from_date else "All Time"
+            to_str = to_date.strftime("%Y-%m-%d") if to_date else "Now"
+            writer.writerow(["Records Period:", f"{from_str} to {to_str}"])
+        
+        writer.writerow([])
+        
+        # Patient demographics
+        writer.writerow(["PATIENT DEMOGRAPHICS"])
+        writer.writerow(["Name:", f"{patient.first_name} {patient.last_name}"])
+        writer.writerow(["Patient ID:", str(patient.id)])
+        writer.writerow(["Date of Birth:", patient.dob.strftime("%Y-%m-%d") if patient.dob else "N/A"])
+        writer.writerow(["Email:", patient.email or "N/A"])
+        writer.writerow(["Phone:", patient.phone or "N/A"])
+        writer.writerow([])
+        
+        # Records section
+        writer.writerow(["MEDICAL RECORDS"])
+        writer.writerow(["Date", "Type", "Created By"])
+        for record in records[:50]:  # Limit to 50 most recent
+            record_date = record.created_at.strftime("%Y-%m-%d %H:%M") if record.created_at else "N/A"
+            record_type = record.record_type.value if hasattr(record.record_type, 'value') else str(record.record_type)
+            writer.writerow([record_date, record_type, record.created_by or "N/A"])
+        writer.writerow([])
+        
+        # Appointments section
+        writer.writerow(["APPOINTMENTS"])
+        writer.writerow(["Date", "Reason", "Status"])
+        for appt in appointments[:50]:  # Limit to 50
+            appt_date = appt.scheduled_at.strftime("%Y-%m-%d %H:%M") if appt.scheduled_at else "N/A"
+            status = appt.status.value if hasattr(appt.status, 'value') else str(appt.status)
+            writer.writerow([appt_date, appt.reason or "N/A", status])
+        writer.writerow([])
+        
+        # Footer
+        writer.writerow(["CONFIDENTIAL - Authorized Use Only"])
+        writer.writerow(["Generated by:", generated_by])
+        
+        # Convert to BytesIO
+        output.seek(0)
+        buffer = BytesIO(output.getvalue().encode('utf-8'))
+        return buffer
+
+    def _build_compliance_report_csv(
+        self,
+        from_date: datetime,
+        to_date: datetime,
+        total_events: int,
+        chain_ok: bool,
+        break_glass_count: int,
+        events_by_action: dict,
+        failed_events: int,
+        top_users: list,
+        events: list,
+        generated_by: str,
+        generated_at: datetime
+    ) -> BytesIO:
+        """Build CSV content for compliance report."""
+        # Debug logging
+        import logging
+        logging.getLogger(__name__).info(f"CSV Builder - Received: total_events={total_events}, chain_ok={chain_ok}, break_glass={break_glass_count}, failed={failed_events}")
+        logging.getLogger(__name__).info(f"CSV Builder - events_by_action count={len(events_by_action)}, top_users count={len(top_users)}, events count={len(events)}")
+        
+        try:
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Report header
+            writer.writerow(["COMPLIANCE AUDIT REPORT"])
+            writer.writerow(["Generated:", generated_at.strftime("%Y-%m-%d %H:%M UTC")])
+            writer.writerow(["Report ID:", f"CA-{generated_at.strftime('%Y%m%d')}-{generated_by[:8]}"])
+            writer.writerow(["Period:", f"{from_date.strftime('%Y-%m-%d')} to {to_date.strftime('%Y-%m-%d')}"])
+            writer.writerow([])
+            
+            # Summary section
+            writer.writerow(["SUMMARY STATISTICS"])
+            writer.writerow(["Total Events:", total_events])
+            writer.writerow(["Chain Integrity:", "VERIFIED" if chain_ok else "COMPROMISED"])
+            writer.writerow(["Break-Glass Events:", break_glass_count])
+            writer.writerow(["Failed Events:", failed_events])
+            writer.writerow([])
+            
+            # Events by action
+            writer.writerow(["EVENTS BY ACTION"])
+            writer.writerow(["Action", "Count"])
+            for action, count in sorted(events_by_action.items(), key=lambda x: x[1], reverse=True):
+                writer.writerow([action, count])
+            writer.writerow([])
+            
+            # Top users
+            writer.writerow(["TOP USERS BY ACTIVITY"])
+            writer.writerow(["Name", "Email", "Event Count"])
+            for user in top_users:
+                writer.writerow([user.get("name", "N/A"), user.get("email", "N/A"), user.get("count", 0)])
+            writer.writerow([])
+            
+            # Detailed events
+            writer.writerow(["DETAILED EVENT LOG"])
+            writer.writerow(["Timestamp", "Action", "User", "Status", "Priority", "Details"])
+            
+            # Debug: Log first event to see its structure
+            if events:
+                first_event = events[0]
+                logging.getLogger(__name__).info(f"First event type: {type(first_event)}, priority type: {type(first_event.priority)}, priority value: {first_event.priority}")
+            
+            for event in events[:100]:  # Limit to 100 events
+                try:
+                    event_time = event.created_at.strftime("%Y-%m-%d %H:%M:%S") if event.created_at else "N/A"
+                    user_id = str(event.user_id) if event.user_id else "anonymous"
+                    
+                    # Handle priority - could be enum or string
+                    priority = "N/A"
+                    if event.priority:
+                        if hasattr(event.priority, 'value'):
+                            priority = event.priority.value
+                        else:
+                            priority = str(event.priority)
+                    
+                    # Get reason/details - the model uses 'reason' not 'details'
+                    details = event.reason or "N/A" if hasattr(event, 'reason') else "N/A"
+                    
+                    writer.writerow([
+                        event_time,
+                        event.action,
+                        user_id,
+                        event.status,
+                        priority,
+                        details
+                    ])
+                except Exception as e:
+                    logging.getLogger(__name__).error(f"Error writing event to CSV: {e}")
+                    # Write a placeholder row
+                    writer.writerow(["ERROR", "ERROR", "ERROR", "ERROR", "ERROR", str(e)])
+            writer.writerow([])
+            
+            # Footer
+            writer.writerow(["CONFIDENTIAL - Authorized Use Only"])
+            writer.writerow(["Generated by:", generated_by])
+            
+            # Convert to BytesIO
+            output.seek(0)
+            buffer = BytesIO(output.getvalue().encode('utf-8'))
+            return buffer
+            
+        except Exception as e:
+            logging.getLogger(__name__).error(f"CRITICAL ERROR in CSV generation: {e}")
+            # Return error CSV
+            error_output = StringIO()
+            error_writer = csv.writer(error_output)
+            error_writer.writerow(["ERROR GENERATING REPORT"])
+            error_writer.writerow([str(e)])
+            error_output.seek(0)
+            return BytesIO(error_output.getvalue().encode('utf-8'))

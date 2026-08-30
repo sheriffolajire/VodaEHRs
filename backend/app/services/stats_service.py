@@ -162,9 +162,22 @@ def get_patient_stats(db: Session, patient: User) -> dict[str, Any]:
         - active_consents: count of active consents granted
         - document_count: count of documents
     """
-    # Get patient record
+    # Get patient record - try by email first, then by name match
     patient_record = db.query(Patient).filter(Patient.email == patient.email).first()
+    
+    # If not found by email, try matching by first_name + last_name
+    if not patient_record and patient.first_name and patient.last_name:
+        patient_record = (
+            db.query(Patient)
+            .filter(
+                Patient.first_name == patient.first_name,
+                Patient.last_name == patient.last_name,
+            )
+            .first()
+        )
+    
     if not patient_record:
+        logger.warning(f"No patient record found for user {patient.email} ({patient.first_name} {patient.last_name})")
         return {
             "record_count_by_type": {},
             "upcoming_appointments": 0,
@@ -220,6 +233,7 @@ def get_patient_stats(db: Session, patient: User) -> dict[str, Any]:
     )
     
     return {
+        "patient_id": str(patient_id),
         "record_count_by_type": record_count_by_type,
         "upcoming_appointments": upcoming_appointments,
         "active_consents": active_consents,

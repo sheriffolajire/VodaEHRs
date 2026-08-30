@@ -1,32 +1,50 @@
 /**
  * Report Service - Phase 6
  * 
- * Provides PDF report generation and download functionality.
+ * Provides CSV report generation and download functionality.
  */
 
 import { apiClient } from "@/services/apiClient";
 
 /**
- * Download a patient summary PDF report.
+ * Download a patient summary CSV report.
  * 
  * @param patientId - UUID of the patient
+ * @param options - Optional date range filter
  * @returns Promise that resolves when download starts
  */
-export async function downloadPatientSummaryReport(patientId: string): Promise<void> {
-  const response = await apiClient.get(
-    `/reports/patient/${patientId}/summary.pdf`,
-    {
-      responseType: "blob",
-    }
-  );
+export async function downloadPatientSummaryReport(
+  patientId: string,
+  options: {
+    fromDate?: Date;
+    toDate?: Date;
+  } = {}
+): Promise<void> {
+  // Build query parameters
+  const params = new URLSearchParams();
+  
+  if (options.fromDate) {
+    params.append("from_date", options.fromDate.toISOString());
+  }
+  
+  if (options.toDate) {
+    params.append("to_date", options.toDate.toISOString());
+  }
+  
+  const queryString = params.toString();
+  const url = `/reports/patient/${patientId}/summary.csv${queryString ? `?${queryString}` : ""}`;
+  
+  const response = await apiClient.get(url, {
+    responseType: "blob",
+  });
   
   // Create blob URL and trigger download
-  const blob = new Blob([response.data], { type: "application/pdf" });
-  const url = window.URL.createObjectURL(blob);
+  const blob = new Blob([response.data], { type: "text/csv" });
+  const blobUrl = window.URL.createObjectURL(blob);
   
   // Extract filename from Content-Disposition header or generate default
   const contentDisposition = response.headers["content-disposition"];
-  let filename = `patient_summary_${patientId}.pdf`;
+  let filename = `patient_summary_${patientId}.csv`;
   
   if (contentDisposition) {
     const filenameMatch = contentDisposition.match(/filename="(.+)"/);
@@ -37,18 +55,18 @@ export async function downloadPatientSummaryReport(patientId: string): Promise<v
   
   // Create temporary link and click
   const link = document.createElement("a");
-  link.href = url;
+  link.href = blobUrl;
   link.download = filename;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   
   // Clean up
-  window.URL.revokeObjectURL(url);
+  window.URL.revokeObjectURL(blobUrl);
 }
 
 /**
- * Download a compliance audit PDF report.
+ * Download a compliance audit CSV report.
  * 
  * @param options - Report options
  * @returns Promise that resolves when download starts
@@ -75,19 +93,19 @@ export async function downloadComplianceReport(
   }
   
   const queryString = params.toString();
-  const url = `/reports/compliance.pdf${queryString ? `?${queryString}` : ""}`;
+  const url = `/reports/compliance.csv${queryString ? `?${queryString}` : ""}`;
   
   const response = await apiClient.get(url, {
     responseType: "blob",
   });
   
   // Create blob URL and trigger download
-  const blob = new Blob([response.data], { type: "application/pdf" });
+  const blob = new Blob([response.data], { type: "text/csv" });
   const blobUrl = window.URL.createObjectURL(blob);
   
   // Extract filename from Content-Disposition header or generate default
   const contentDisposition = response.headers["content-disposition"];
-  let filename = `compliance_report.pdf`;
+  let filename = `compliance_report.csv`;
   
   if (contentDisposition) {
     const filenameMatch = contentDisposition.match(/filename="(.+)"/);

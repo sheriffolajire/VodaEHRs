@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, UserRound, ShieldCheck, Shield, History, FileText, AlertTriangle, Activity } from "lucide-react";
+import { LayoutDashboard, Users, UserRound, ShieldCheck, Shield, History, FileText, AlertTriangle, Activity, ClipboardList } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import type { RoleName } from "@/types/auth";
@@ -15,7 +15,8 @@ interface NavItem {
 const navItems: NavItem[] = [
   // Phase 6: Role-specific dashboards
   { to: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["Admin"] },
-  { to: "/doctor/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["Doctor", "Nurse"] },
+  { to: "/doctor/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["Doctor"] },
+  { to: "/nurse/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["Nurse"] },
   { to: "/patient/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["Patient"] },
   { to: "/auditor/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["Auditor"] },
   {
@@ -23,6 +24,13 @@ const navItems: NavItem[] = [
     label: "Patients",
     icon: UserRound,
     roles: ["Admin", "Receptionist", "Doctor", "Nurse"],
+  },
+  // Phase 6: Nursing Tasks (Nurse only)
+  {
+    to: "/tasks",
+    label: "My Tasks",
+    icon: ClipboardList,
+    roles: ["Nurse"],
   },
   { to: "/users", label: "Users", icon: Users, roles: ["Admin"] },
   // Phase 5: Patient-only routes
@@ -38,19 +46,26 @@ const navItems: NavItem[] = [
     icon: Shield,
     roles: ["Patient"],
   },
-  // Phase 5: Audit Logs (Admin only)
+  // Phase 5: Audit Logs (Admin and Auditor)
   {
     to: "/audit",
     label: "Audit Logs",
     icon: History,
-    roles: ["Admin"],
+    roles: ["Admin", "Auditor"],
   },
-  // Phase 5: Emergency Access Management (Admin only)
+  // Phase 5: Emergency Access Management (Admin and Auditor)
   {
     to: "/emergency-access",
     label: "Emergency Access",
     icon: AlertTriangle,
-    roles: ["Admin"],
+    roles: ["Admin", "Auditor"],
+  },
+  // Phase 6: Compliance Reports (Auditor only)
+  {
+    to: "/compliance-reports",
+    label: "Compliance Reports",
+    icon: FileText,
+    roles: ["Auditor"],
   },
   // Phase 6: System Monitoring (Admin only)
   {

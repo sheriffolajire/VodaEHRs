@@ -11,6 +11,7 @@ from app.api.v1 import (
     documents,
     emergency_access,
     health,
+    nursing_tasks,
     patients,
     record_versions,
     records,
@@ -36,3 +37,4 @@ api_router.include_router(emergency_access.router)
 api_router.include_router(audit.router)
 api_router.include_router(stats.router)
 api_router.include_router(reports.router)
+api_router.include_router(nursing_tasks.router)
