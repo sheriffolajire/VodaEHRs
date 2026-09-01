@@ -25,6 +25,9 @@ def list_for_nurse(
     statement = select(NursingTask).where(NursingTask.assigned_to == nurse_id)
     
     if status:
+        # Compare using the enum's stored value (lower‑case string) to avoid
+        # mismatches between the Python enum name (e.g. "PENDING") and the
+        # PostgreSQL enum values (e.g. "pending").
         statement = statement.where(NursingTask.status == status.value)
     
     statement = (
@@ -99,7 +102,7 @@ def count_vitals_due_for_nurse(db: Session, nurse_id: uuid.UUID) -> int:
         .filter(
             and_(
                 NursingTask.assigned_to == nurse_id,
-                NursingTask.task_type == TaskType.VITALS.value,
+                NursingTask.task_type == TaskType.VITALS,
                 NursingTask.status.in_([TaskStatus.PENDING.value, TaskStatus.IN_PROGRESS.value])
             )
         )

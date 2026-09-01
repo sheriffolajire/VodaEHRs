@@ -71,7 +71,10 @@ export function CreateTaskDialog() {
     mutationFn: createTask,
     onSuccess: () => {
       toast.success("Task created successfully");
-      queryClient.invalidateQueries({ queryKey: ["nursing-tasks"] });
+      // Invalidate all nursing-tasks queries (including filtered ones like ["nursing-tasks", "pending"])
+      queryClient.invalidateQueries({ queryKey: ["nursing-tasks"], exact: false });
+      // Also invalidate the stats query
+      queryClient.invalidateQueries({ queryKey: ["nursing-tasks", "stats"] });
       setOpen(false);
       setFormData({
         patient_id: "",

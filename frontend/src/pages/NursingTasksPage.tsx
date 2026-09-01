@@ -67,17 +67,24 @@ export function NursingTasksPage() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("pending");
 
-  // Fetch tasks
+  // Fetch tasks for the active tab
   const { data: tasks, isLoading } = useQuery({
     queryKey: ["nursing-tasks", activeTab],
     queryFn: () => listTasks(activeTab === "all" ? undefined : activeTab),
+  });
+
+  // Fetch all tasks for stats (always unfiltered)
+  const { data: allTasks } = useQuery({
+    queryKey: ["nursing-tasks", "stats"],
+    queryFn: () => listTasks(),
   });
 
   // Complete task mutation
   const completeMutation = useMutation({
     mutationFn: completeTask,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["nursing-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["nursing-tasks"], exact: false });
+      queryClient.invalidateQueries({ queryKey: ["nursing-tasks", "stats"] });
       toast.success("Task completed successfully");
     },
     onError: () => {
@@ -89,7 +96,8 @@ export function NursingTasksPage() {
   const startMutation = useMutation({
     mutationFn: startTask,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["nursing-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["nursing-tasks"], exact: false });
+      queryClient.invalidateQueries({ queryKey: ["nursing-tasks", "stats"] });
       toast.success("Task started");
     },
     onError: () => {
@@ -126,7 +134,7 @@ export function NursingTasksPage() {
             <ClipboardList className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{tasks?.length || 0}</div>
+            <div className="text-2xl font-bold">{allTasks?.length || 0}</div>
             <p className="text-xs text-muted-foreground">Assigned to you</p>
           </CardContent>
         </Card>
@@ -137,7 +145,7 @@ export function NursingTasksPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {tasks?.filter((t) => t.status === "pending").length || 0}
+              {allTasks?.filter((t) => t.status === "pending").length || 0}
             </div>
             <p className="text-xs text-muted-foreground">Awaiting action</p>
           </CardContent>
@@ -149,7 +157,7 @@ export function NursingTasksPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {tasks?.filter((t) => t.status === "in_progress").length || 0}
+              {allTasks?.filter((t) => t.status === "in_progress").length || 0}
             </div>
             <p className="text-xs text-muted-foreground">Currently working</p>
           </CardContent>
@@ -161,7 +169,7 @@ export function NursingTasksPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {tasks?.filter((t) => t.status === "completed").length || 0}
+              {allTasks?.filter((t) => t.status === "completed").length || 0}
             </div>
             <p className="text-xs text-muted-foreground">Done today</p>
           </CardContent>

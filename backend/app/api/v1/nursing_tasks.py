@@ -16,6 +16,7 @@ from app.models.nursing_task import NursingTask, TaskStatus, TaskPriority, TaskT
 from app.models.role import RoleName
 from app.models.user import User
 from app.repositories import nursing_task_repository
+from app.schemas.nursing_task import NursingTaskCreate, NursingTaskUpdate
 from app.schemas.response import success
 from app.services.exceptions import NotFoundError, PermissionError_
 
@@ -66,38 +67,21 @@ def list_tasks(
 
 @router.post("")
 def create_task(
-    patient_id: uuid.UUID,
-    title: str,
-    task_type: str,
-    priority: str = "normal",
-    description: Optional[str] = None,
-    due_date: Optional[datetime] = None,
-    assigned_to: Optional[uuid.UUID] = None,
+    request: NursingTaskCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(RoleName.NURSE, RoleName.DOCTOR, RoleName.ADMIN)),
 ) -> dict:
     """Create a new nursing task."""
     try:
-        # Convert enum strings to enum values
-        try:
-            task_type_enum = TaskType(task_type.lower())
-        except ValueError:
-            task_type_enum = TaskType[task_type.upper()]
-        
-        try:
-            priority_enum = TaskPriority(priority.lower())
-        except ValueError:
-            priority_enum = TaskPriority[priority.upper()]
-        
         task = NursingTask(
-            patient_id=patient_id,
-            title=title,
-            description=description,
-            task_type=task_type_enum,
-            priority=priority_enum,
-            assigned_to=assigned_to or current_user.id,
+            patient_id=request.patient_id,
+            title=request.title,
+            description=request.description,
+            task_type=request.task_type.value,
+            priority=request.priority.value,
+            assigned_to=request.assigned_to or current_user.id,
             assigned_by=current_user.id,
-            due_date=due_date,
+            due_date=request.due_date,
         )
         nursing_task_repository.add(db, task)
         db.commit()
@@ -117,7 +101,7 @@ def create_task(
 @router.patch("/{task_id}/status")
 def update_task_status(
     task_id: uuid.UUID,
-    status: str,
+    request: NursingTaskUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(RoleName.NURSE, RoleName.DOCTOR, RoleName.ADMIN)),
 ) -> dict:
@@ -131,13 +115,9 @@ def update_task_status(
         if task.assigned_to != current_user.id and current_user.role.name != RoleName.ADMIN:
             raise PermissionError_("You can only update your own tasks")
         
-        # Convert status string to enum by value
-        try:
-            new_status = TaskStatus(status.lower())
-        except ValueError:
-            new_status = TaskStatus[status.upper()]
-        task.status = new_status
-        if new_status == TaskStatus.COMPLETED:
+        # Convert schema enum to model enum
+        task.status = TaskStatus(request.status.value)
+        if task.status == TaskStatus.COMPLETED:
             task.completed_at = datetime.utcnow()
         
         nursing_task_repository.update(db, task)

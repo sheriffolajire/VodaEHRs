@@ -58,14 +58,14 @@ class NursingTask(Base):
     # Task details
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    task_type: Mapped[TaskType] = mapped_column(SQLEnum(TaskType, name="task_type"), nullable=False)
+    task_type: Mapped[TaskType] = mapped_column(SQLEnum(TaskType, name="task_type", values_callable=lambda x: [e.value for e in x]), nullable=False)
     status: Mapped[TaskStatus] = mapped_column(
-        SQLEnum(TaskStatus, name="task_status"),
+        SQLEnum(TaskStatus, name="task_status", values_callable=lambda x: [e.value for e in x]),
         default=TaskStatus.PENDING,
         nullable=False
     )
     priority: Mapped[TaskPriority] = mapped_column(
-        SQLEnum(TaskPriority, name="task_priority"),
+        SQLEnum(TaskPriority, name="task_priority", values_callable=lambda x: [e.value for e in x]),
         default=TaskPriority.NORMAL,
         nullable=False
     )

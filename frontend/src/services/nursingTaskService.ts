@@ -86,8 +86,7 @@ export async function updateTaskStatus(
 ): Promise<{ id: string; status: string }> {
   const response = await apiClient.patch<SuccessResponse<{ id: string; status: string }>>(
     `/nursing-tasks/${taskId}/status`,
-    null,
-    { params: { status } }
+    { status }
   );
   return response.data.data;
 }

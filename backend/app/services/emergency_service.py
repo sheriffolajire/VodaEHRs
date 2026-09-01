@@ -69,8 +69,8 @@ class EmergencyService:
             clinician_id=clinician.id,
             patient_id=patient_id,
             reason=reason.strip(),
-            granted_at=None,  # Will be set when approved
-            expires_at=None,  # Will be set when approved
+            granted_at=now,  # Will be set when approved
+            expires_at=now + timedelta(minutes=EMERGENCY_ACCESS_DURATION_MINUTES),
             status="pending",  # Requires admin approval
             revoked_at=None,
             revoked_by=None,

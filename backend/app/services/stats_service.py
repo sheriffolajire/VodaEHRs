@@ -139,11 +139,7 @@ def get_doctor_stats(db: Session, doctor: User) -> dict[str, Any]:
     
     # Check if clinician has any active emergency access
     emergency_access_list = emergency_access_repository.list_for_clinician(db, doctor.id)
-    now = datetime.now(UTC)
-    has_emergency = any(
-        ea.revoked_at is None and ea.granted_at <= now < ea.expires_at
-        for ea in emergency_access_list
-    )
+    has_emergency = any(ea.is_active() for ea in emergency_access_list)
     
     return {
         "assigned_patients": len(assigned_patient_ids),
