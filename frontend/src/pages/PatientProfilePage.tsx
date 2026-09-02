@@ -333,11 +333,7 @@ function RecordsTab({
                   <div className="text-xs text-green-700 mt-1">
                     Signed by: {record.signatures.map(s => s.signer_id.slice(0, 8)).join(', ')}...
                   </div>
-                  {record.integrity_ok === false && (
-                    <div className="text-xs text-red-600 mt-1 font-semibold">
-                      ⚠️ Integrity check failed - record may have been tampered with
-                    </div>
-                  )}
+                  
                 </div>
               )}
               
