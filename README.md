@@ -4,28 +4,8 @@ Voda EHRs is my final-year software development project. It is a web-based elect
 
 The project includes normal EHR functions such as patient profiles, medical records, and uploaded documents. Its main focus is access control: a user should only be able to view or change information when their role, permissions, and the patient's consent allow it.
 
-Current stage: The project foundation is working. The main healthcare and security workflows are still under development.
 
-## Current progress
 
-The following parts are currently working:
-
-- React and TypeScript frontend created with Vite
-- Login screen interface and dashboard layout
-- Light and dark theme support
-- FastAPI backend with versioned API routes
-- Frontend connection to the backend health endpoint
-- PostgreSQL and MinIO running through Docker Compose
-- Environment variable templates for local development
-- Basic application, security, and audit log separation
-
-Some security utilities have also been started, but they are not yet connected to a complete login or patient-record workflow:
-
-- Argon2id password hashing utility
-- JWT creation and validation utility
-- Example protected backend route
-- Database and MinIO client configuration
-- Basic security response headers
 
 ## Planned features
 
@@ -40,7 +20,6 @@ The completed system is intended to support:
 - Audit logging for security-relevant actions
 - Controlled emergency access with a recorded reason
 
-These features will be added and tested in stages. They should not be considered complete in the current version.
 
 ## Technologies
 
@@ -101,15 +80,20 @@ Activate it on Windows PowerShell:
 .\.venv\Scripts\Activate.ps1
 ```
 
-Install the packages and run FastAPI:
+Install the packages, apply the database migrations, seed the development data, and run FastAPI:
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env
+alembic upgrade head
+python -m app.seed
 uvicorn app.main:app --reload --port 8000
 ```
 
-The API documentation is available at http://localhost:8000/docs.
+Run the migration and seed commands from the `backend` directory after the PostgreSQL and MinIO services are running. `alembic upgrade head` brings the database schema to the latest version; `python -m app.seed` creates the development roles, admin account, sample clinicians, patients, records, documents, and appointments. Use the seed command for a new local database; it updates existing core accounts but may add development sample documents when repeated.
+
+The backend reads its configuration from the root `.env` file created in step 1. Ensure it includes the database, MinIO, security-key, and initial-admin settings before running these commands. Development credentials, including the seeded sample accounts, are for local use only.
+
+
 
 ### 3. Start the frontend
 
@@ -118,7 +102,6 @@ Open a second terminal:
 ```bash
 cd frontend
 npm install
-cp .env.example .env
 npm run dev
 ```
 
@@ -132,7 +115,7 @@ The frontend is available at http://localhost:5173.
 | GET | `/api/v1/auth/status` | Temporary authentication-module status route |
 | GET | `/api/v1/users/me` | Demonstrates a protected-route pattern |
 
-The authentication and user routes are placeholders and will change as the database-backed login system is implemented.
+
 
 ## Development checks
 
@@ -151,11 +134,7 @@ black --check app alembic
 isort --check-only app alembic
 ```
 
-## Data and security note
 
-No real patient information should be added to this repository. Development and testing will use fictional sample data created for the project.
-
-Files containing passwords, keys, or local environment settings must remain outside Git. Only `.env.example` files should be committed.
 
 ## Development roadmap
 
